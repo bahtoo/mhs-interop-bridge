@@ -1,0 +1,35 @@
+{
+  "resourceType": "ServiceRequest",
+  "id": "sr-2001",
+  "status": "active",
+  "intent": "order",
+  "priority": "routine",
+  "code": {
+    "coding": [
+      {
+        "system": "http://loinc.org",
+        "code": "6690-2"
+      },
+      {
+        "system": "http://loinc.org",
+        "code": "718-7"
+      },
+      {
+        "system": "http://loinc.org",
+        "code": "777-3"
+      }
+    ]
+  },
+  "subject": {
+    "identifier": {
+      "value": "P-003"
+    }
+  },
+  "specimen": [
+    {
+      "identifier": {
+        "value": "H-2001"
+      }
+    }
+  ]
+}

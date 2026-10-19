@@ -1,0 +1,64 @@
+# Vendor profile: clinical chemistry analyzer over ASTM E1381/E1394.
+# Fictional vendor and model. Built from public standards only.
+# A profile is data, not code: adding a vendor means adding one of these files.
+profile_version: "0.1.0"
+device_id: chem-01
+vendor: Acme Diagnostics (fictional)
+model: ChemPro 900
+device_type: clinical_chemistry_analyzer
+protocol: astm
+risk_class: specimen_processing
+
+astm:
+  test_id_component: 4        # R.3 universal test id "^^^GLU": code is component 4
+  specimen_record: O
+  specimen_field: 3           # O.3 specimen id
+  patient_field: 3            # P.3 practice-assigned patient id
+
+tests:
+  GLU:
+    decimals: 0
+    loinc: "2345-7"
+    display: "Glucose [Mass/volume] in Serum or Plasma"
+    vendor_unit: "mmol/L"
+    unit: "mg/dL"
+    factor: 18.016            # mmol/L to mg/dL
+    ref_low: 70
+    ref_high: 99
+    critical_low: 40
+    critical_high: 500
+  K:
+    decimals: 1
+    loinc: "2823-3"
+    display: "Potassium [Moles/volume] in Serum or Plasma"
+    vendor_unit: "mmol/L"
+    unit: "mmol/L"
+    factor: 1.0
+    ref_low: 3.5
+    ref_high: 5.1
+    critical_low: 2.8
+    critical_high: 6.2
+
+# Vendor result flags (R.7) mapped to canonical instrument conditions.
+condition_flags:
+  "B": foam
+  "SS": short_sample
+  "CL": clot
+
+abnormal_flags: {N: N, L: L, H: H, LL: LL, HH: HH, "<": L, ">": H}
+
+# QC targets per test and level, used by the Westgard gate.
+qc:
+  GLU:
+    L1: {mean: 5.5, sd: 0.15}
+    L2: {mean: 16.6, sd: 0.40}
+  K:
+    L1: {mean: 4.0, sd: 0.08}
+
+# Natural-language tags. These become the agent-facing reference file, the same
+# idea MHS uses to capture tacit knowledge that is not visible in code.
+tags:
+  - "Results flagged B mean foam or bubbles in the sample cup. This is a physical problem. Re-running the same cup will not fix it; the specimen must be re-spun or recollected."
+  - "Results flagged SS mean short sample. Do not release; request a new aliquot."
+  - "Patient results may only be released when the most recent QC run for that test passes Westgard rules."
+  - "Critical values require documented human acknowledgement before release."

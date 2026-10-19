@@ -1,0 +1,17 @@
+# Device profile for an absorbance plate reader automated by file drop.
+# Fictional vendor and model.
+profile_version: "0.1.0"
+device_id: reader-01
+vendor: OptiRead (fictional)
+model: OR-96
+device_type: plate_reader
+risk_class: research_automation
+driver: filedrop
+
+limits:
+  wavelength_nm: {min: 340, max: 750}
+
+tags:
+  - "Absorbance at or above 3.0 is saturated and carries no concentration information. If the top of a dilution series saturates, compress the range and run a fresh row; re-reading will not help."
+  - "Bubbles distort the optical reading. Readings from wells that foamed are invalid."
+  - "BCA protein assays are read at 562 nm."

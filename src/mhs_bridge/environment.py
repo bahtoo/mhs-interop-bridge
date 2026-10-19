@@ -1,0 +1,80 @@
+"""Assemble a complete, simulated environment.
+
+    world (physical ground truth)
+      -> simulated instruments, each speaking its own protocol
+      -> drivers (this repository's contribution)
+      -> MHS runtime (stand-in)
+      -> applications (lab record, clinical bridge) and the operator channel
+
+``faults`` is keyed by device id (plus ``mhs`` for the runtime), for example
+``{"lh-01": {"offline": True}, "chem-01": {"qc_shift": {"GLU": 3.5}}, "mhs": {"estop": True}}``.
+"""
+
+from __future__ import annotations
+
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from .apps.clinical.bridge import ClinicalBridgeApp
+from .apps.clinical.ehr import MemoryEhr
+from .apps.lab_record import LabRecordApp
+from .apps.operator import OperatorChannel
+from .drivers.analyzer import AnalyzerDriver
+from .drivers.dialects import Profile, builtin_profile_data
+from .drivers.filedrop import FileDropReaderDriver
+from .drivers.monitor import MonitorDriver
+from .drivers.sila2 import SiLA2Driver, load_builtin_feature
+from .mhs_shim import Runtime
+from .sim.clinical_instruments import SimAnalyzer, SimBedsideMonitor
+from .sim.lab_instruments import SimFileDropReader, SimLiquidHandler, SimPlateMover
+from .sim.world import LabWorld
+
+SILA_SIMULATORS = {"liquid_handler": SimLiquidHandler, "plate_mover": SimPlateMover}
+
+
+@dataclass
+class Environment:
+    world: LabWorld
+    runtime: Runtime
+    operator: OperatorChannel
+    lab: LabRecordApp
+    clinical: ClinicalBridgeApp
+    ehr: Any
+    folder: Path
+
+    @property
+    def apps(self) -> dict[str, Any]:
+        return {self.lab.app_id: self.lab, self.clinical.app_id: self.clinical}
+
+
+def build(faults: dict | None = None, folder: str | Path | None = None, audit_path: str | Path | None = None,
+          ehr: Any | None = None) -> Environment:
+    faults = faults or {}
+    folder = Path(folder or tempfile.mkdtemp(prefix="mhs-bridge-"))
+    world = LabWorld.default()
+    runtime = Runtime(audit_path)
+    for dev_id, data in builtin_profile_data().items():
+        f = faults.get(dev_id, {})
+        world.online[dev_id] = not f.get("offline", False)
+        driver = data.get("driver")
+        if driver == "sila2":
+            sim = SILA_SIMULATORS[data["device_type"]](world, dev_id)
+            runtime.register(SiLA2Driver(data, sim, [load_builtin_feature(x) for x in data["features"]],
+                                         is_online=lambda d=dev_id: world.online[d]))
+        elif driver == "filedrop":
+            sim = SimFileDropReader(world, folder / dev_id, dev_id)
+            runtime.register(FileDropReaderDriver(data, folder / dev_id, sim.process_inbox,
+                                                  is_online=lambda d=dev_id: world.online[d]))
+        elif data.get("device_type") == "patient_monitor":
+            runtime.register(MonitorDriver(Profile(data), SimBedsideMonitor(Profile(data), f)))
+        elif data.get("protocol") in ("astm", "hl7"):
+            runtime.register(AnalyzerDriver(Profile(data), SimAnalyzer(Profile(data), f)))
+    if faults.get("mhs", {}).get("estop"):
+        runtime.engage_estop("scenario", "engaged before the run")
+    operator = OperatorChannel(runtime)
+    ehr = ehr or MemoryEhr()
+    lab = LabRecordApp(runtime, operator)
+    clinical = ClinicalBridgeApp(runtime, operator, ehr)
+    return Environment(world, runtime, operator, lab, clinical, ehr, folder)

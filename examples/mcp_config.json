@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "mhs-bridge": {
+      "command": "mhs-bridge",
+      "args": [
+        "serve",
+        "--scenario",
+        "lab_foam_recovery",
+        "--audit",
+        "audit.jsonl"
+      ]
+    }
+  }
+}

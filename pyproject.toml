@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mhs-interop-bridge"
+version = "0.1.0"
+description = "Open-protocol drivers, physical-world evals and cookbooks for the Model Hardware Standard (MHS): SiLA 2, file-drop instruments, ASTM and HL7 analyzers, with an optional FHIR clinical bridge."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Bahtiyar Aytac"}]
+requires-python = ">=3.10"
+dependencies = ["pyyaml>=6"]
+keywords = ["Model Hardware Standard", "MHS", "MCP", "SiLA 2", "lab automation", "ASTM", "HL7", "FHIR", "evals", "AI safety"]
+
+[project.urls]
+Homepage = "https://github.com/bahtoo/mhs-interop-bridge"
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2"]
+claude = ["anthropic>=0.40"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+mhs-bridge = "mhs_bridge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mhs_bridge = ["profiles/*.yaml", "features/*.xml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

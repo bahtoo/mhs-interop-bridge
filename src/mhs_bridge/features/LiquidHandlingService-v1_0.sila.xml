@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- SiLA 2 Feature Definition for the simulated liquid handler in this repository.
+     Written against the public SiLA 2 FeatureDefinition schema. Fictional originator. -->
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" MaturityLevel="Draft"
+         Originator="org.example.mhsbridge" Category="liquidhandling"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>LiquidHandlingService</Identifier>
+  <DisplayName>Liquid Handling Service</DisplayName>
+  <Description>Single-channel aspirate, dispense and mix between labware positions on the deck.</Description>
+
+  <Command>
+    <Identifier>Transfer</Identifier>
+    <DisplayName>Transfer</DisplayName>
+    <Description>Aspirate from the source well, dispense into the target well, then mix in the target.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Source</Identifier>
+      <DisplayName>Source</DisplayName>
+      <Description>Source position as PLATE:WELL, for example RES:BUF or P1:A1.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Target</Identifier>
+      <DisplayName>Target</DisplayName>
+      <Description>Target position as PLATE:WELL.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Volume</Identifier>
+      <DisplayName>Volume</DisplayName>
+      <Description>Volume to transfer.</Description>
+      <DataType>
+        <Constrained>
+          <DataType><Basic>Real</Basic></DataType>
+          <Constraints>
+            <MinimalInclusive>1</MinimalInclusive>
+            <MaximalInclusive>200</MaximalInclusive>
+            <Unit>
+              <Label>uL</Label>
+              <Factor>1E-9</Factor>
+              <Offset>0</Offset>
+              <UnitComponent><SIUnit>Meter</SIUnit><Exponent>3</Exponent></UnitComponent>
+            </Unit>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>FlowRate</Identifier>
+      <DisplayName>Flow Rate</DisplayName>
+      <Description>Aspirate and dispense flow rate.</Description>
+      <DataType>
+        <Constrained>
+          <DataType><Basic>Real</Basic></DataType>
+          <Constraints>
+            <MinimalInclusive>1</MinimalInclusive>
+            <MaximalInclusive>250</MaximalInclusive>
+            <Unit>
+              <Label>uL/s</Label>
+              <Factor>1E-9</Factor>
+              <Offset>0</Offset>
+              <UnitComponent><SIUnit>Meter</SIUnit><Exponent>3</Exponent></UnitComponent>
+              <UnitComponent><SIUnit>Second</SIUnit><Exponent>-1</Exponent></UnitComponent>
+            </Unit>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>MixCycles</Identifier>
+      <DisplayName>Mix Cycles</DisplayName>
+      <Description>Number of mix cycles in the target after dispensing.</Description>
+      <DataType>
+        <Constrained>
+          <DataType><Basic>Integer</Basic></DataType>
+          <Constraints>
+            <MinimalInclusive>0</MinimalInclusive>
+            <MaximalInclusive>10</MaximalInclusive>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>TargetVolume</Identifier>
+      <DisplayName>Target Volume</DisplayName>
+      <Description>Volume in the target well after the transfer, in uL.</Description>
+      <DataType><Basic>Real</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors>
+      <Identifier>FoamDetected</Identifier>
+      <Identifier>InsufficientVolume</Identifier>
+      <Identifier>PositionNotFound</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+
+  <Property>
+    <Identifier>PlateMap</Identifier>
+    <DisplayName>Plate Map</DisplayName>
+    <Description>JSON: per plate and well, volume (uL), concentration (ug/mL), liquid class and foam flag, for wells in use.</Description>
+    <Observable>No</Observable>
+    <DataType><Basic>String</Basic></DataType>
+  </Property>
+  <Property>
+    <Identifier>DeckLayout</Identifier>
+    <DisplayName>Deck Layout</DisplayName>
+    <Description>JSON: labware on the deck, and reservoir contents.</Description>
+    <Observable>No</Observable>
+    <DataType><Basic>String</Basic></DataType>
+  </Property>
+
+  <DefinedExecutionError>
+    <Identifier>FoamDetected</Identifier>
+    <DisplayName>Foam Detected</DisplayName>
+    <Description>Liquid level detection triggered on foam or bubbles instead of liquid in the reported well.</Description>
+  </DefinedExecutionError>
+  <DefinedExecutionError>
+    <Identifier>InsufficientVolume</Identifier>
+    <DisplayName>Insufficient Volume</DisplayName>
+    <Description>The source does not hold the requested volume.</Description>
+  </DefinedExecutionError>
+  <DefinedExecutionError>
+    <Identifier>PositionNotFound</Identifier>
+    <DisplayName>Position Not Found</DisplayName>
+    <Description>The plate or well is not on the deck.</Description>
+  </DefinedExecutionError>
+</Feature>

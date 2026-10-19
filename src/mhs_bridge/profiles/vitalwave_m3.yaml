@@ -1,0 +1,89 @@
+# Device profile: bedside patient monitor sending periodic HL7 v2.5.1 ORU^R01
+# with IEEE 11073-10101 (MDC) reference identifiers and unit mnemonics.
+# Fictional vendor and model. Built from public standards only.
+profile_version: "0.1.0"
+device_id: mon-12
+vendor: VitalWave (fictional)
+model: M3
+device_type: patient_monitor
+protocol: hl7
+risk_class: patient_connected     # agents may read; no procedure can be invoked on this device
+
+hl7:
+  result_messages: ["ORU^R01"]
+
+# Where the monitor sits and who it is bound to. Association is what turns a
+# number on a screen into a measurement about a patient; without it nothing is charted.
+association:
+  location: "ICU^BED-12"
+  patient_id: "P-004"
+
+tests:
+  MDC_ECG_HEART_RATE:
+    loinc: "8867-4"
+    display: "Heart rate"
+    vendor_unit: "MDC_DIM_BEAT_PER_MIN"
+    unit: "/min"
+    factor: 1.0
+    decimals: 0
+    ref_low: 60
+    ref_high: 100
+  MDC_PULS_OXIM_SAT_O2:
+    loinc: "59408-5"
+    display: "Oxygen saturation in Arterial blood by Pulse oximetry"
+    vendor_unit: "MDC_DIM_PERCENT"
+    unit: "%"
+    factor: 1.0
+    decimals: 0
+    ref_low: 94
+    ref_high: 100
+  MDC_PRESS_BLD_NONINV_SYS:
+    loinc: "8480-6"
+    display: "Systolic blood pressure"
+    vendor_unit: "MDC_DIM_MMHG"
+    unit: "mm[Hg]"
+    factor: 1.0
+    decimals: 0
+    ref_low: 90
+    ref_high: 140
+  MDC_PRESS_BLD_NONINV_DIA:
+    loinc: "8462-4"
+    display: "Diastolic blood pressure"
+    vendor_unit: "MDC_DIM_MMHG"
+    unit: "mm[Hg]"
+    factor: 1.0
+    decimals: 0
+    ref_low: 60
+    ref_high: 90
+  MDC_RESP_RATE:
+    loinc: "9279-1"
+    display: "Respiratory rate"
+    vendor_unit: "MDC_DIM_RESP_PER_MIN"
+    unit: "/min"
+    factor: 1.0
+    decimals: 0
+    ref_low: 12
+    ref_high: 20
+  MDC_TEMP:
+    loinc: "8310-5"
+    display: "Body temperature"
+    vendor_unit: "MDC_DIM_DEGC"
+    unit: "Cel"
+    factor: 1.0
+    decimals: 1
+    ref_low: 36.1
+    ref_high: 37.8
+
+# Signal-quality flags this vendor sends in OBX-8.
+condition_flags:
+  "ART": artefact
+  "LO": lead_off
+
+abnormal_flags: {N: N, L: L, H: H}
+
+tags:
+  - "This is a patient-connected device. Agents may read it; no procedure can be invoked on it, and the bridge refuses any attempt."
+  - "Monitor alarms stay on the monitor and the nurse call system. This bridge is a secondary-use path for charting and must never be treated as an alarm path."
+  - "Vital signs are charted to the EHR only after a nurse validates the set. An agent can prepare a set and request validation; it cannot validate."
+  - "A value flagged ART (motion or perfusion artefact) or LO (lead off) is not a measurement of the patient. Do not chart it; ask the nurse to check the sensor."
+  - "If the monitor is not associated with a patient, nothing it reports can be charted."

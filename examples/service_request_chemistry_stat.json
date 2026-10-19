@@ -1,0 +1,31 @@
+{
+  "resourceType": "ServiceRequest",
+  "id": "sr-1001",
+  "status": "active",
+  "intent": "order",
+  "priority": "stat",
+  "code": {
+    "coding": [
+      {
+        "system": "http://loinc.org",
+        "code": "2345-7"
+      },
+      {
+        "system": "http://loinc.org",
+        "code": "2823-3"
+      }
+    ]
+  },
+  "subject": {
+    "identifier": {
+      "value": "P-001"
+    }
+  },
+  "specimen": [
+    {
+      "identifier": {
+        "value": "S-1001"
+      }
+    }
+  ]
+}

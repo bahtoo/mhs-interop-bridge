@@ -1,0 +1,9 @@
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.mhs_state/
+audit*.jsonl
+evals/claude/
+build/
+dist/

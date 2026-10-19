@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- SiLA 2 Feature Definition for the simulated plate mover. Fictional originator. -->
+<Feature SiLA2Version="1.0" FeatureVersion="1.0" MaturityLevel="Draft"
+         Originator="org.example.mhsbridge" Category="labware"
+         xmlns="http://www.sila-standard.org"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://www.sila-standard.org https://gitlab.com/SiLA2/sila_base/raw/master/schema/FeatureDefinition.xsd">
+  <Identifier>PlateHandlingService</Identifier>
+  <DisplayName>Plate Handling Service</DisplayName>
+  <Description>Moves microplates between instrument positions.</Description>
+
+  <Command>
+    <Identifier>MovePlate</Identifier>
+    <DisplayName>Move Plate</DisplayName>
+    <Description>Pick a plate from its current position and place it at the destination.</Description>
+    <Observable>No</Observable>
+    <Parameter>
+      <Identifier>Plate</Identifier>
+      <DisplayName>Plate</DisplayName>
+      <Description>Plate identifier, for example P1.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Parameter>
+    <Parameter>
+      <Identifier>Destination</Identifier>
+      <DisplayName>Destination</DisplayName>
+      <Description>Destination position.</Description>
+      <DataType>
+        <Constrained>
+          <DataType><Basic>String</Basic></DataType>
+          <Constraints>
+            <Set><Value>lh-01</Value><Value>reader-01</Value></Set>
+          </Constraints>
+        </Constrained>
+      </DataType>
+    </Parameter>
+    <Response>
+      <Identifier>Location</Identifier>
+      <DisplayName>Location</DisplayName>
+      <Description>Where the plate is after the move.</Description>
+      <DataType><Basic>String</Basic></DataType>
+    </Response>
+    <DefinedExecutionErrors>
+      <Identifier>DestinationUnavailable</Identifier>
+      <Identifier>PlateNotFound</Identifier>
+    </DefinedExecutionErrors>
+  </Command>
+
+  <Property>
+    <Identifier>PlateLocations</Identifier>
+    <DisplayName>Plate Locations</DisplayName>
+    <Description>JSON: plate identifier to current position.</Description>
+    <Observable>No</Observable>
+    <DataType><Basic>String</Basic></DataType>
+  </Property>
+
+  <DefinedExecutionError>
+    <Identifier>DestinationUnavailable</Identifier>
+    <DisplayName>Destination Unavailable</DisplayName>
+    <Description>The destination instrument is not ready to receive a plate.</Description>
+  </DefinedExecutionError>
+  <DefinedExecutionError>
+    <Identifier>PlateNotFound</Identifier>
+    <DisplayName>Plate Not Found</DisplayName>
+    <Description>No plate with this identifier is known.</Description>
+  </DefinedExecutionError>
+</Feature>

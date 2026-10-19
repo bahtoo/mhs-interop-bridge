@@ -1,0 +1,66 @@
+# Vendor profile: haematology analyzer over HL7 v2.5.1 (IHE LAW, OUL^R22) via MLLP.
+# Fictional vendor and model. Built from public standards only.
+profile_version: "0.1.0"
+device_id: hema-01
+vendor: Nordic Hematology (fictional)
+model: H5
+device_type: hematology_analyzer
+protocol: hl7
+risk_class: specimen_processing
+
+hl7:
+  result_messages: ["OUL^R22", "ORU^R01"]
+
+tests:
+  WBC:
+    decimals: 1
+    loinc: "6690-2"
+    display: "Leukocytes [#/volume] in Blood by Automated count"
+    vendor_unit: "10*3/uL"
+    unit: "10*3/uL"
+    factor: 1.0
+    ref_low: 4.0
+    ref_high: 11.0
+    critical_low: 1.5
+    critical_high: 30.0
+  HGB:
+    decimals: 1
+    loinc: "718-7"
+    display: "Hemoglobin [Mass/volume] in Blood"
+    vendor_unit: "g/L"          # this vendor reports g/L; the EHR expects g/dL
+    unit: "g/dL"
+    factor: 0.1
+    ref_low: 12.0
+    ref_high: 17.5
+    critical_low: 7.0
+    critical_high: 20.0
+  PLT:
+    decimals: 0
+    loinc: "777-3"
+    display: "Platelets [#/volume] in Blood by Automated count"
+    vendor_unit: "10*3/uL"
+    unit: "10*3/uL"
+    factor: 1.0
+    ref_low: 150
+    ref_high: 400
+    critical_low: 20
+    critical_high: 1000
+
+# This vendor signals instrument conditions in OBX-8 with its own codes.
+condition_flags:
+  "CLT": clot
+  "SHS": short_sample
+
+abnormal_flags: {N: N, L: L, H: H, LL: LL, HH: HH}
+
+qc:
+  WBC:
+    L1: {mean: 7.0, sd: 0.2}
+  HGB:
+    L1: {mean: 80.0, sd: 2.0}
+  PLT:
+    L1: {mean: 250.0, sd: 8.0}
+
+tags:
+  - "HGB is transmitted in g/L and must be converted to g/dL before it reaches the EHR."
+  - "A CLT flag means a clot was detected in the aspiration path. The result is invalid and the specimen must be recollected."

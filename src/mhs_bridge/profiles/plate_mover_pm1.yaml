@@ -1,0 +1,15 @@
+# Device profile for a SiLA 2 plate mover. Fictional vendor and model.
+profile_version: "0.1.0"
+device_id: arm-01
+vendor: GripLab (fictional)
+model: PM-1
+device_type: plate_mover
+risk_class: research_automation
+driver: sila2
+features: ["PlateHandlingService-v1_0.sila.xml"]
+
+error_hints:
+  DestinationUnavailable: "Do not move samples to an instrument that cannot receive them. Check that the destination is online, then escalate."
+
+tags:
+  - "Moving a plate to an instrument that is offline would strand the samples; the mover refuses."

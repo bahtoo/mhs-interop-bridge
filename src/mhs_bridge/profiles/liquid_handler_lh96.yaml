@@ -1,0 +1,29 @@
+# Device profile for a SiLA 2 liquid handler. The Feature Definition describes
+# the interface; this profile adds what an experienced scientist knows.
+# Fictional vendor and model.
+profile_version: "0.1.0"
+device_id: lh-01
+vendor: LabFlow (fictional)
+model: LH-96
+device_type: liquid_handler
+risk_class: research_automation
+driver: sila2
+features: ["LiquidHandlingService-v1_0.sila.xml"]
+
+error_hints:
+  FoamDetected: >-
+    Physical failure, not a software bug. Retrying in the same well agitates the liquid further.
+    Move to a clean well, lower the flow rate and reduce mix cycles.
+  InsufficientVolume: "Refill the source or choose another; do not reduce volume silently."
+
+interlocks:
+  - {type: quarantine_on_error, error: FoamDetected, params: [Source, Target], detail_key: Well}
+  - {type: capacity, target: Target, volume: Volume, capacity_ul: 300.0}
+  - {type: on_deck, params: [Source, Target]}
+
+routines: [SerialDilution]
+
+tags:
+  - "Viscous protein solutions (for example BSA above about 25 ug/mL) foam at high flow rates. Above roughly 50 uL/s expect bubbles; start near 10 uL/s with at most 3 mix cycles."
+  - "Aqueous and dye solutions transfer well around 140 uL/s."
+  - "A 96-well plate well holds 300 uL. The hardware does not stop an overfill; the driver does."
