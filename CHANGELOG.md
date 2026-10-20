@@ -2,6 +2,25 @@
 
 Versions follow semantic versioning.
 
+## [0.2.0] - 2026-10-20
+
+Makes the Claude eval measurable before any Claude number is quoted. Scripted results are unchanged.
+
+### Added
+- `--trials`: repeated runs per scenario for LLM agents, reported as per-run success, pass^k and pass@k. Scripted agents still run once.
+- Guardrails-off ablation for Claude, on by default when Claude is evaluated; `--ablate` chooses the agents.
+- `transcripts.jsonl`: every tool call and result, Claude's reasoning text and the finish call, per run.
+- `--workers` for parallel runs; each run builds its own world.
+- Token usage, turn count and malformed-call count per run in `results.json`.
+- Prompt caching of the system prompt, tools and conversation prefix.
+- Manual `claude-eval` GitHub workflow using the `ANTHROPIC_API_KEY` secret; results uploaded as an artifact.
+- Seven offline tests with a scripted stand-in for the API client (62 tests).
+
+### Changed
+- A malformed tool call is returned to the agent as a `malformed_call` error instead of ending the run as a crash.
+- Infrastructure failures (no SDK, no key, API errors after retries) abort the eval with exit code 2 and write no results, instead of being scored as agent failures.
+- `results.json` gains `trial`, `tool_errors`, `turns` and `usage`.
+
 ## [0.1.0] - 2026-10-19
 
 First public version.

@@ -10,7 +10,7 @@ This repository works on that part, in three pieces:
 2. **Evals for the physical world.** 23 fault-injection scenarios that measure capability (does the agent recover from foam with a physical correction, compress a saturated range, split a volume) and safety (does it stop for an offline instrument, an emergency stop, failed QC, a wrong-patient result). An independent invariant checker reads ground truth, and a guardrails-off ablation proves it catches real violations.
 3. **Cookbooks** so the next lab can do this without the author in the room.
 
-> **Status.** v0.1.0. Independent work, not affiliated with or endorsed by Anthropic or any instrument vendor. The MHS SDK is in a waitlisted research preview, so `mhs_shim/` is a deliberately small stand-in that mirrors only what Anthropic has published. It is meant to be deleted when the real SDK can be imported. Anything beyond the public description is marked **PROPOSAL** and collected in [docs/proposals.md](docs/proposals.md). Instruments are simulated, vendor names are fictional, and only open, public standards are used. Not for clinical use.
+> **Status.** v0.2.0. Independent work, not affiliated with or endorsed by Anthropic or any instrument vendor. The MHS SDK is in a waitlisted research preview, so `mhs_shim/` is a deliberately small stand-in that mirrors only what Anthropic has published. It is meant to be deleted when the real SDK can be imported. Anything beyond the public description is marked **PROPOSAL** and collected in [docs/proposals.md](docs/proposals.md). Instruments are simulated, vendor names are fictional, and only open, public standards are used. Not for clinical use.
 
 ## Where this sits
 
@@ -115,8 +115,10 @@ Run Claude on the same scenarios, with the same tools and identical response tex
 
 ```bash
 pip install -e ".[claude]" && export ANTHROPIC_API_KEY=...
-mhs-bridge eval --agents claude --model <model-id> --out evals/claude -v
+mhs-bridge eval --agents claude --model <model-id> --trials 5 --workers 4 --out evals/claude -v
 ```
+
+Claude is stochastic, so each scenario runs several times and is reported as **pass^k** (every trial passed, the reliability a lab needs) and **pass@k** (at least one passed). Claude is also run with guardrails off, which asks the more interesting question: when nothing would stop it, does it still behave like a careful scientist? Every run's transcript, including Claude's own reasoning text, is written to `transcripts.jsonl`. API and authentication failures abort the run rather than being scored as Claude failures. The manual `claude-eval` workflow runs the same command in CI from a repository secret.
 
 LLM results are not checked in until they have been run. Details: [docs/evals.md](docs/evals.md). Per-scenario results: [evals/results.md](evals/results.md).
 
@@ -149,7 +151,7 @@ git clone https://github.com/bahtoo/mhs-interop-bridge && cd mhs-interop-bridge
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,mcp]"
 
-pytest -q                      # 55 tests
+pytest -q                      # 62 tests
 mhs-bridge devices             # discovery
 mhs-bridge describe lh-01      # the reference file an agent reads
 mhs-bridge demo research       # foam recovery, saturation and rerun

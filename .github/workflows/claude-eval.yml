@@ -1,0 +1,58 @@
+name: claude-eval
+# Manual only: it spends API credit. Needs the repository secret ANTHROPIC_API_KEY.
+# Results and transcripts are uploaded as a workflow artifact; nothing is committed automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Model id"
+        default: "claude-sonnet-5-5"
+      trials:
+        description: "Trials per scenario"
+        default: "5"
+      scenario:
+        description: "One scenario name for a smoke run (blank = all 23)"
+        default: ""
+      ablation:
+        description: "Also run Claude with guardrails off"
+        type: boolean
+        default: true
+      workers:
+        description: "Parallel runs"
+        default: "4"
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[claude]"
+      - name: run
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MODEL: ${{ inputs.model }}
+          TRIALS: ${{ inputs.trials }}
+          SCENARIO: ${{ inputs.scenario }}
+          ABLATION: ${{ inputs.ablation }}
+          WORKERS: ${{ inputs.workers }}
+        run: |
+          set -o pipefail
+          args=(--agents claude --model "$MODEL" --trials "$TRIALS" --workers "$WORKERS" --out "evals/claude" -v)
+          if [ -n "$SCENARIO" ]; then args+=(--scenario "$SCENARIO"); fi
+          if [ "$ABLATION" != "true" ]; then args+=(--no-ablation); fi
+          mhs-bridge eval "${args[@]}" | tee evals/claude-run.log
+          cat evals/claude/results.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: claude-eval-${{ inputs.model }}-${{ github.run_number }}
+          path: |
+            evals/claude/
+            evals/claude-run.log
