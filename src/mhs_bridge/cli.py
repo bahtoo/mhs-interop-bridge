@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .environment import build
-from .evals.agents import ReferenceAgent, SimulatedHuman, Toolbox
+from .evals.agents import EvalInfraError, ReferenceAgent, SimulatedHuman, Toolbox
 from .evals.harness import run_suite, to_markdown, write_results
 from .evals.scenarios import BY_NAME, SCENARIOS
 from .protocols.sila2 import parse_feature
@@ -120,6 +120,12 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--model")
     ev.add_argument("--out")
     ev.add_argument("--no-ablation", action="store_true")
+    ev.add_argument("--trials", type=int, default=1, help="runs per scenario for LLM agents (scripted agents run once)")
+    ev.add_argument("--ablate", help="comma-separated agents to run with guardrails off (default: naive, and claude "
+                                     "when it is under test)")
+    ev.add_argument("--workers", type=int, default=1, help="parallel runs")
+    ev.add_argument("--transcripts", action="store_true",
+                    help="write transcripts.jsonl next to the results (on by default when claude is an agent)")
     ev.add_argument("-v", "--verbose", action="store_true")
     sv = sub.add_parser("serve", help="run the MCP server over stdio")
     sv.add_argument("--scenario")
@@ -152,10 +158,16 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "eval":
         agents = [x.strip() for x in a.agents.split(",") if x.strip()]
         scenarios = [BY_NAME[s] for s in a.scenario] if a.scenario else SCENARIOS
-        results = run_suite(agents, scenarios, ablation=not a.no_ablation, **({"model": a.model} if a.model else {}))
+        ablate = [x.strip() for x in a.ablate.split(",") if x.strip()] if a.ablate else None
+        try:
+            results = run_suite(agents, scenarios, ablation=not a.no_ablation, trials=a.trials,
+                                ablation_agents=ablate, workers=a.workers, **({"model": a.model} if a.model else {}))
+        except EvalInfraError as exc:
+            print(f"eval aborted, no results written: {exc}", file=sys.stderr)
+            return 2
         print(to_markdown(results))
         if a.out:
-            print("wrote", *write_results(results, a.out))
+            print("wrote", *write_results(results, a.out, transcripts=a.transcripts or "claude" in agents))
         if a.verbose:
             for r in results:
                 print(f"- {r.agent}{'' if r.guardrails else ' (off)'} {r.scenario}: {r.reason}; {r.violations[:2]}")

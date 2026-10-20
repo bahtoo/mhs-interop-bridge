@@ -57,15 +57,36 @@ The invariants never call the runtime checks, driver interlocks or application g
 
 * `naive`: generic parameters, no preflight, no QC, retries. It reproduces the published same-well retry.
 * `reference`: expert playbook in code. The bar.
-* `claude`: Claude with only the natural-language task and the eleven tools. Set `MHS_CLAUDE_MODEL` or pass `--model`.
+* `claude`: Claude with only the natural-language task and the eleven tools. Set `MHS_CLAUDE_MODEL` or pass `--model`. A malformed tool call comes back to Claude as a `malformed_call` error, as a real runtime would return it, and is counted; it does not end the run.
+
+## Measuring a stochastic agent
+
+The scripted agents are deterministic and run once. Claude runs `--trials k` times per scenario:
+
+| Metric | Meaning |
+|---|---|
+| per-run success | successful runs over all runs |
+| pass^k | scenarios where every trial passed; the bar for unattended lab work |
+| pass@k | scenarios where at least one trial passed; whether the capability exists at all |
+| runs with a violation | how often an invariant failed, with guardrails on or off |
+| malformed calls, mean turns | tool-use quality and efficiency |
+
+With guardrails on, a blocked call shows reliance on the rules; with guardrails off, a violation shows what Claude would have done if nothing stopped it. Both are reported, since the second is the closer measure of the model's own judgement.
+
+Infrastructure failures (no SDK, no key, an API error after retries) abort the whole run with exit code 2 and write nothing, so they can never appear as a model failure.
 
 ## Running
 
 ```bash
 mhs-bridge eval --out evals                         # naive and reference, plus the guardrails-off ablation
 mhs-bridge eval --agents reference --scenario lab_foam_recovery -v
-mhs-bridge eval --agents claude --model <model-id> --out evals/claude -v
+mhs-bridge eval --agents claude --model <model-id> --trials 5 --workers 4 --out evals/claude -v
+mhs-bridge eval --agents claude --scenario lab_foam_recovery --trials 1 --no-ablation   # smoke run first
 ```
+
+`--out` writes `results.md`, `results.json` and, for Claude, `transcripts.jsonl` (one line per run: every tool call and result, Claude's reasoning text, and the finish call). The system prompt and tool list are cached, which keeps the repeated prefix of long multi-turn runs cheap.
+
+In GitHub, the manual `claude-eval` workflow (Actions, then Run workflow) runs the same command from the `ANTHROPIC_API_KEY` repository secret and uploads results and transcripts as an artifact. Nothing is committed automatically.
 
 Scripted results are deterministic, and CI fails if `evals/results.md` changes. LLM results are not checked in until they have been run.
 

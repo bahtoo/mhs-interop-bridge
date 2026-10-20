@@ -23,6 +23,11 @@ from ..tools import TOOL_SPECS, as_text, dispatch
 from .scenarios import Scenario
 
 
+class EvalInfraError(RuntimeError):
+    """The eval could not run (no SDK, no key, API failure after retries). Never scored as an agent failure:
+    a missing key must not turn into a published "Claude failed" number."""
+
+
 class SimulatedHuman:
     """Decides pending approvals one tool call after they are raised."""
 
@@ -41,13 +46,23 @@ class Toolbox:
     calls: int = 0
     transcript: list[dict] = field(default_factory=list)
 
+    tool_errors: int = 0
+
     def call(self, name: str, **tool_input: Any) -> Any:
         self.human.tick(self.env)
         self.calls += 1
-        out = dispatch(self.env, name, tool_input)
+        try:
+            out = dispatch(self.env, name, tool_input)
+        except Exception as exc:  # noqa: BLE001 - a malformed call is the agent's error, returned like a runtime would
+            self.tool_errors += 1
+            out = {"status": "error", "error": "malformed_call", "detail": f"{type(exc).__name__}: {exc}"}
         keep = isinstance(out, (dict, list, bool, int, float)) or out is None
         self.transcript.append({"tool": name, "input": tool_input, "output": out if keep else str(out)[:200]})
         return out
+
+    def note(self, **entry: Any) -> None:
+        """Model-side events (reasoning text, finish, usage) interleaved with tool calls."""
+        self.transcript.append({"event": entry.pop("event"), **entry})
 
     def dev(self, device: str, procedure: str, **args: Any) -> dict:
         return self.call("mhs_invoke", device_id=device, procedure=procedure, args=args)
@@ -320,33 +335,82 @@ FINISH_TOOL = {"name": "finish",
                    "required": ["outcome", "summary"]}}
 
 
+def _with_cache_breakpoint(messages: list[dict]) -> list[dict]:
+    """Copy of the history with a cache breakpoint on the newest user block, so each turn re-reads the
+    prefix from cache instead of paying for it again. Only one rolling breakpoint, to stay within limits."""
+    out = [dict(m) for m in messages]
+    last = out[-1]
+    content = last["content"]
+    blocks = [{"type": "text", "text": content}] if isinstance(content, str) else [dict(b) for b in content]
+    blocks[-1]["cache_control"] = {"type": "ephemeral"}
+    last["content"] = blocks
+    return out
+
+
 class ClaudeAgent:
+    """Claude with the natural-language task and the same tools the MCP server exposes.
+
+    ``client`` can be injected (tests use a scripted fake). ``usage`` accumulates tokens across the run.
+    """
+
     name = "claude"
 
-    def __init__(self, model: str | None = None, max_turns: int = 60):
+    def __init__(self, model: str | None = None, max_turns: int = 60, max_tokens: int = 4096,
+                 client: Any = None):
         self.model = model or os.environ.get("MHS_CLAUDE_MODEL", "claude-sonnet-5-5")
-        self.max_turns = max_turns
+        self.max_turns, self.max_tokens = max_turns, max_tokens
+        self.client = client
+        self.turns = 0
+        self.usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0,
+                      "cache_creation_input_tokens": 0}
+
+    def _client(self) -> Any:
+        if self.client is None:
+            try:
+                import anthropic
+            except ImportError as exc:
+                raise EvalInfraError("pip install 'mhs-interop-bridge[claude]' to run the Claude agent") from exc
+            try:
+                self.client = anthropic.Anthropic(max_retries=6)
+            except Exception as exc:  # noqa: BLE001 - typically a missing ANTHROPIC_API_KEY
+                raise EvalInfraError(f"cannot create the Anthropic client: {exc}") from exc
+        return self.client
+
+    def _count(self, resp: Any) -> None:
+        u = getattr(resp, "usage", None)
+        for k in self.usage:
+            self.usage[k] += int(getattr(u, k, 0) or 0)
 
     def run(self, tb: Toolbox, sc: Scenario) -> dict:
-        try:
-            import anthropic
-        except ImportError as exc:   # pragma: no cover
-            raise RuntimeError("pip install 'mhs-interop-bridge[claude]' to run the Claude agent") from exc
-        client = anthropic.Anthropic()
+        client = self._client()
+        system = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
         messages: list[dict] = [{"role": "user", "content": sc.task}]
         for _ in range(self.max_turns):
-            resp = client.messages.create(model=self.model, max_tokens=4096, system=SYSTEM_PROMPT,
-                                          tools=TOOL_SPECS + [FINISH_TOOL], messages=messages)
+            self.turns += 1
+            try:
+                resp = client.messages.create(model=self.model, max_tokens=self.max_tokens, system=system,
+                                              tools=TOOL_SPECS + [FINISH_TOOL],
+                                              messages=_with_cache_breakpoint(messages))
+            except Exception as exc:  # noqa: BLE001 - API errors are infrastructure, not agent behaviour
+                raise EvalInfraError(f"API call failed on turn {self.turns} of {sc.name}: "
+                                     f"{type(exc).__name__}: {exc}") from exc
+            self._count(resp)
             messages.append({"role": "assistant", "content": resp.content})
+            text = " ".join(b.text for b in resp.content if b.type == "text").strip()
+            if text:
+                tb.note(event="assistant_text", text=text)
             if resp.stop_reason != "tool_use":
-                return _report("failed", "stopped without calling finish")
+                tb.note(event="stop", stop_reason=resp.stop_reason)
+                return _report("failed", f"stopped without calling finish ({resp.stop_reason})")
             results = []
             for block in resp.content:
                 if block.type != "tool_use":
                     continue
                 if block.name == "finish":
-                    return _report(block.input["outcome"], block.input["summary"])
-                out = tb.call(block.name, **block.input)
+                    inp = block.input or {}
+                    tb.note(event="finish", **inp)
+                    return _report(str(inp.get("outcome", "failed")), str(inp.get("summary", "")))
+                out = tb.call(block.name, **(block.input or {}))
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": as_text(out)})
             messages.append({"role": "user", "content": results})
         return _report("failed", f"no finish after {self.max_turns} turns")
