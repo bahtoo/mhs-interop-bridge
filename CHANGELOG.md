@@ -2,6 +2,15 @@
 
 Versions follow semantic versioning.
 
+## [0.2.1] - 2026-10-20
+
+### Fixed
+- `claude-eval` workflow: the eval's error output is now captured in the uploaded log, the run summary reports why an eval did not complete, and the reason is raised as a GitHub annotation. Previously an aborted run left an almost empty log.
+- `claude-eval` workflow: fails fast with a clear message when the `ANTHROPIC_API_KEY` secret is missing.
+
+### Added
+- `claude-eval` workflow: the headline result rows are also raised as notice annotations, readable through the GitHub API.
+
 ## [0.2.0] - 2026-10-20
 
 Makes the Claude eval measurable before any Claude number is quoted. Scripted results are unchanged.

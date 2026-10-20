@@ -33,6 +33,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: check secret
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error title=claude-eval::Repository secret ANTHROPIC_API_KEY is not set or is empty (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY is set (${#ANTHROPIC_API_KEY} characters)"
       - run: pip install -e ".[claude]"
       - name: run
         env:
@@ -47,8 +56,20 @@ jobs:
           args=(--agents claude --model "$MODEL" --trials "$TRIALS" --workers "$WORKERS" --out "evals/claude" -v)
           if [ -n "$SCENARIO" ]; then args+=(--scenario "$SCENARIO"); fi
           if [ "$ABLATION" != "true" ]; then args+=(--no-ablation); fi
-          mhs-bridge eval "${args[@]}" | tee evals/claude-run.log
-          cat evals/claude/results.md >> "$GITHUB_STEP_SUMMARY"
+          status=0
+          mhs-bridge eval "${args[@]}" 2>&1 | tee evals/claude-run.log || status=$?
+          if [ "$status" -eq 0 ]; then
+            cat evals/claude/results.md >> "$GITHUB_STEP_SUMMARY"
+            # Headline rows as annotations, readable through the API without downloading logs
+            grep -E '^\| claude' evals/claude/results.md | while IFS= read -r row; do
+              echo "::notice title=claude-eval result::$row"
+            done
+          else
+            { echo "### Eval did not complete (exit $status)"; echo '```'; tail -n 20 evals/claude-run.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            # Surface the reason as an annotation, visible without opening the log
+            echo "::error title=claude-eval aborted::$(grep -m1 'eval aborted' evals/claude-run.log || tail -n 1 evals/claude-run.log)"
+          fi
+          exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
