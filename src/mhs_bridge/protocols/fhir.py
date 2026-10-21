@@ -72,11 +72,13 @@ def observation(r: CanonicalResult) -> dict:
     return obs
 
 
-def diagnostic_report(report_id: str, results: list[CanonicalResult], based_on: str = "") -> dict:
+def diagnostic_report(report_id: str, results: list[CanonicalResult], based_on: str = "",
+                      partial: bool = False) -> dict:
     """A transaction Bundle holding one DiagnosticReport and its Observations.
 
     ``based_on`` is the ServiceRequest id when the report fulfils an EHR order,
     which is what lets the EHR close the loop from order to result.
+    ``partial`` marks a report that does not cover every ordered test (FHIR status ``partial``).
     """
     if not results:
         raise ValueError("a report needs at least one result")
@@ -85,7 +87,8 @@ def diagnostic_report(report_id: str, results: list[CanonicalResult], based_on: 
     report = {
         "resourceType": "DiagnosticReport",
         "id": report_id,
-        "status": "final" if all(r.status == "final" for r in results) else "preliminary",
+        "status": ("partial" if partial else
+                   "final" if all(r.status == "final" for r in results) else "preliminary"),
         "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/v2-0074",
                                   "code": "LAB"}]}],
         "code": {"text": "Laboratory report"},

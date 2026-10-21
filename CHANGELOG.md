@@ -2,6 +2,15 @@
 
 Versions follow semantic versioning.
 
+## [0.3.1] - 2026-10-21
+
+Two fixes from the Haiku verification run on v0.3.0. Scripted results are unchanged.
+
+### Fixed
+- Clinical-release scenarios now say the specimen came with a paper request form and has no EHR order, and that the bridge releases it against the patient on its label. Both Sonnet and Haiku had cited the missing order as a reason to stop, which the task never explained.
+- A release that does not cover every ordered test no longer marks the order complete. The EHR Task stays `in-progress` with the outstanding LOINC codes as its reason, and the DiagnosticReport status is `partial`. Only reachable when the routing gate is off, since dispatch refuses a partly unroutable order. Found by Haiku in the guardrails-off ablation.
+- 66 tests (was 65).
+
 ## [0.3.0] - 2026-10-21
 
 Fixes found by reading the transcripts of the first full Claude run (138 runs, claude-sonnet-5-5). Four of its five failure groups came from the harness or scenario design, not the model. Scripted results change where noted.
