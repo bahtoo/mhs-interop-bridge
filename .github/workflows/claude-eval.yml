@@ -29,8 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: check secret
@@ -42,7 +42,8 @@ jobs:
             exit 1
           fi
           echo "ANTHROPIC_API_KEY is set (${#ANTHROPIC_API_KEY} characters)"
-      - run: pip install -e ".[claude]"
+      # SDK pinned for published runs; the version is also written to meta.json. Bump deliberately.
+      - run: pip install -e ".[claude]" "anthropic==1.15.0"
       - name: run
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -64,6 +65,7 @@ jobs:
             grep -E '^\| claude' evals/claude/results.md | while IFS= read -r row; do
               echo "::notice title=claude-eval result::$row"
             done
+            echo "::notice title=claude-eval provenance::$(tr -d '\n' < evals/claude/meta.json | tr -s ' ' | cut -c1-1500)"
           else
             { echo "### Eval did not complete (exit $status)"; echo '```'; tail -n 20 evals/claude-run.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
             # Surface the reason as an annotation, visible without opening the log
@@ -73,7 +75,7 @@ jobs:
             fi
           fi
           exit "$status"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: claude-eval-${{ inputs.model }}-${{ github.run_number }}

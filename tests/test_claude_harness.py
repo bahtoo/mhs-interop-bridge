@@ -143,3 +143,14 @@ def test_abort_keeps_finished_runs_and_labels_them_partial(tmp_path):
     assert [p.name for p in paths] == ["results.partial.md", "results.partial.json", "transcripts.partial.jsonl"]
     assert paths[0].read_text().startswith("**PARTIAL RESULTS, not for quoting.**")
     assert not (tmp_path / "results.md").exists()
+
+
+def test_claude_results_carry_provenance(tmp_path):
+    from mhs_bridge import __version__
+    from mhs_bridge.cli import write_meta
+
+    path = write_meta(str(tmp_path), agents=["claude"], model="claude-haiku-5-5", trials=3, runs=36,
+                      scenarios=["vitals_chart"], ablation=True, started="2026-10-21T00:00:00+00:00")
+    meta = json.loads(path.read_text())
+    assert meta["package_version"] == __version__ and meta["model"] == "claude-haiku-5-5"
+    assert meta["anthropic_sdk"] and len(meta["git_sha"]) == 40 and meta["runs"] == 36

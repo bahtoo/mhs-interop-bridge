@@ -2,6 +2,18 @@
 
 Versions follow semantic versioning.
 
+## [0.3.2] - 2026-10-21
+
+Provenance and CI housekeeping before the final Sonnet and Haiku runs. No scoring change.
+
+### Added
+- `meta.json` beside every Claude result: package version, git SHA, model, anthropic SDK version, Python, trials, scenarios, ablation, run count, start and finish times. The workflow raises it as an annotation.
+
+### Changed
+- The `claude-eval` workflow pins `anthropic==1.15.0`, the version used for every run so far, so published runs do not silently change SDK.
+- GitHub actions moved to Node 24 releases: `actions/checkout@v5`, `actions/setup-python@v6`, `actions/upload-artifact@v6` (Node 20 was removed from runners on 23 Sep 2026).
+- 67 tests (was 66).
+
 ## [0.3.1] - 2026-10-21
 
 Two fixes from the Haiku verification run on v0.3.0. Scripted results are unchanged.
