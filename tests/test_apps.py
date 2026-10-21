@@ -98,6 +98,22 @@ def test_unroutable_order_and_undispatched_results_are_refused():
     assert env.clinical.invoke("release_results", {"specimen_id": "S-1001"})["rule"] == "order_state"
 
 
+def test_partial_release_leaves_the_order_open_and_the_report_partial():
+    from mhs_bridge.evals.harness import disable_guardrails
+
+    env = build()
+    env.clinical.receive_order(SR_TSH)               # GLU routable, TSH (3016-3) not
+    disable_guardrails(env)                          # the only way a partly unroutable order gets dispatched
+    assert env.clinical.invoke("dispatch_order", {"order_id": "sr-3001"})["status"] == "ok"
+    _qc(env, "chem-01", ["GLU"])
+    _run(env, "chem-01", "S-1001", ["GLU"])
+    res = env.clinical.invoke("release_results", {"specimen_id": "S-1001"})
+    assert res["status"] == "ok" and res["outstanding_tests"] == ["3016-3"]
+    assert env.clinical.orders["sr-3001"].task_status == "in-progress"
+    assert env.ehr.resources("Task")[-1]["status"] == "in-progress"
+    assert env.ehr.resources("DiagnosticReport")[-1]["status"] == "partial"
+
+
 def test_patient_mismatch_held_and_recollection_puts_order_on_hold():
     env = build({"chem-01": {"patient_mismatch": ["S-1001"]}})
     env.clinical.receive_order(SR_CHEM)

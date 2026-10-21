@@ -338,17 +338,25 @@ class ClinicalBridgeApp:
             return {"status": "error", "error": f"no results for {specimen_id}"}
         results = [CanonicalResult(**{**r, "release": ReleaseState.RELEASABLE}) for r in rows]
         order = self.order_for(specimen_id)
+        outstanding = sorted(set(order.loinc_codes) - {r.test_code for r in results}) if order else []
         report_id = f"rpt-{next(self._ids):04d}"
-        bundle = fhir.diagnostic_report(report_id, results, based_on=order.order_id if order else "")
+        bundle = fhir.diagnostic_report(report_id, results, based_on=order.order_id if order else "",
+                                        partial=bool(outstanding))
         if order:
             order.report_id = report_id
-            self._task(order, "completed", send=False)
+            # An order is complete only when every ordered test is reported. Reachable only when the routing gate
+            # is bypassed (the guardrails-off ablation), since dispatch refuses a partly unroutable order.
+            if outstanding:
+                self._task(order, "in-progress", f"partial report; outstanding LOINC {', '.join(outstanding)}",
+                           send=False)
+            else:
+                self._task(order, "completed", send=False)
             bundle["entry"].append({"resource": self._task_resource(order),
                                     "request": {"method": "PUT", "url": f"Task/{order.task_id}"}})
         ack = self.ehr.send(bundle)
         self.released.update(r.result_id for r in results)
         return {"status": "ok", "specimen_id": specimen_id, "observations": len(results), "ehr": ack,
-                "based_on": order.order_id if order else None}
+                "based_on": order.order_id if order else None, "outstanding_tests": outstanding}
 
     # ------------------------------------------------------------------
     # Task lifecycle
