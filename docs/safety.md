@@ -33,10 +33,10 @@ Devices also refuse on their own, through defined errors: `DestinationUnavailabl
 | clinical | `result_held` | driver hold (unknown unit, unmapped code, instrument condition) or patient mismatch with the order |
 | clinical | `order_state` | the result belongs to an order that was never dispatched |
 | clinical | `qc_gate` | latest QC fails Westgard 1_3s, 2_2s or R_4s |
-| clinical | `critical_unacknowledged` | critical value without a human-approved acknowledgement |
+| clinical | `critical_unacknowledged` | critical value not yet telephoned by a human |
 | clinical | `unroutable`, `already_dispatched` | order cannot be, or has been, dispatched |
 | clinical | `vitals_held`, `already_charted` | artefact, lead-off, unassociated monitor, or already charted |
-| clinical | needs approval | `acknowledge_critical`, `chart_vitals` |
+| clinical | needs approval | `request_critical_callback`, `chart_vitals` |
 
 ## 4. Operator channel
 

@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     dm.add_argument("track", choices=list(DEMOS))
     ev = sub.add_parser("eval", help="run the eval suite")
     ev.add_argument("--agents", default="naive,reference")
-    ev.add_argument("--scenario", action="append")
+    ev.add_argument("--scenario", action="append", help="scenario name; repeat it or give a comma-separated list")
     ev.add_argument("--model")
     ev.add_argument("--out")
     ev.add_argument("--no-ablation", action="store_true")
@@ -157,17 +157,40 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_demo(a.track)
     elif a.cmd == "eval":
         agents = [x.strip() for x in a.agents.split(",") if x.strip()]
-        scenarios = [BY_NAME[s] for s in a.scenario] if a.scenario else SCENARIOS
+        names = [n.strip() for arg in (a.scenario or []) for n in arg.split(",") if n.strip()]
+        unknown = [n for n in names if n not in BY_NAME]
+        if unknown:
+            print(f"unknown scenario {', '.join(unknown)}; run `mhs-bridge scenarios` for the list", file=sys.stderr)
+            return 2
+        scenarios = [BY_NAME[n] for n in dict.fromkeys(names)] if names else SCENARIOS
         ablate = [x.strip() for x in a.ablate.split(",") if x.strip()] if a.ablate else None
+        transcripts = a.transcripts or "claude" in agents
+        progress = None
+        if a.out:
+            Path(a.out).mkdir(parents=True, exist_ok=True)
+            progress = Path(a.out) / "progress.jsonl"
+            progress.write_text("", encoding="utf-8")
+
+        def log_run(r) -> None:   # one line per finished run, so even a killed job leaves a record
+            if progress:
+                with progress.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(r.record(), default=str) + "\n")
+
         try:
-            results = run_suite(agents, scenarios, ablation=not a.no_ablation, trials=a.trials,
-                                ablation_agents=ablate, workers=a.workers, **({"model": a.model} if a.model else {}))
+            results = run_suite(agents, scenarios, ablation=not a.no_ablation, trials=a.trials, ablation_agents=ablate,
+                                workers=a.workers, on_result=log_run, **({"model": a.model} if a.model else {}))
         except EvalInfraError as exc:
-            print(f"eval aborted, no results written: {exc}", file=sys.stderr)
+            kept = f"{len(exc.completed)} of {exc.total} runs finished before it"
+            if a.out and exc.completed:
+                paths = write_results(exc.completed, a.out, transcripts=transcripts,
+                                      partial=f"The eval stopped early: {exc}. {kept}.")
+                print("wrote", *paths, file=sys.stderr)
+            print(f"eval aborted, no complete results written ({kept}): {exc}", file=sys.stderr)
             return 2
         print(to_markdown(results))
         if a.out:
-            print("wrote", *write_results(results, a.out, transcripts=a.transcripts or "claude" in agents))
+            print("wrote", *write_results(results, a.out, transcripts=transcripts))
+            progress.unlink(missing_ok=True)
         if a.verbose:
             for r in results:
                 print(f"- {r.agent}{'' if r.guardrails else ' (off)'} {r.scenario}: {r.reason}; {r.violations[:2]}")

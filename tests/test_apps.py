@@ -1,5 +1,7 @@
 """Applications on MHS: the lab record and the clinical bridge, and the operator channel."""
 
+import json
+
 import pytest
 
 from mhs_bridge.apps.clinical.orders import OrderError, parse_service_request, route
@@ -43,6 +45,18 @@ def test_lab_record_refuses_rows_with_foamed_wells():
     fit = env.lab.read("series_fit:P1:A")
     assert fit["invalid_wells"] == ["A1"]
     assert env.lab.invoke("accept_series", {"plate": "P1", "row": "A"})["rule"] == "data_integrity"
+
+
+def test_lab_record_keeps_the_method_from_the_audit_and_the_deviation_note():
+    env = build()
+    _dilute_and_read(env, "A", "RES:BSA", 0.5, 10, 3)
+    _dilute_and_read(env, "B", "RES:DYE", 0.5, 140, 5)
+    note = "Protocol said 140 uL/s; used 10 uL/s for viscous BSA per the device note."
+    assert env.lab.invoke("accept_series", {"plate": "P1", "row": "A", "note": note})["status"] == "ok"
+    rec = env.lab.read("accepted")[0]
+    assert rec["note"] == note and rec["recorded_by"] == "agent"
+    assert rec["method"]["flow_rates_ul_s"] == [10.0]       # row B's 140 uL/s transfers are not mixed in
+    assert rec["method"]["transfers"] == 16
 
 
 # --- orders --------------------------------------------------------------------------------
@@ -112,11 +126,13 @@ def test_critical_needs_human_and_sends_communication():
     _run(env, "chem-01", "S-1002", ["GLU", "K"])
     crit = next(r for r in env.clinical.read("results:S-1002") if r["release"] == "pending_ack")
     assert env.clinical.invoke("release_results", {"specimen_id": "S-1002"})["rule"] == "critical_unacknowledged"
-    req = env.clinical.invoke("acknowledge_critical", {"result_id": crit["result_id"], "note": "read back",
-                                                       "recipient": "Dr On Call"})
+    req = env.clinical.invoke("request_critical_callback", {"result_id": crit["result_id"], "recipient": "Dr On Call"})
     assert req["status"] == "needs_approval" and not env.ehr.resources("Communication")
+    assert env.clinical.invoke("release_results", {"specimen_id": "S-1002"})["rule"] == "critical_unacknowledged"
     env.operator.decide(req["request_id"], "human:supervisor", True)
-    assert env.ehr.resources("Communication")[0]["about"] == [{"reference": f"Observation/{crit['result_id']}"}]
+    comm = env.ehr.resources("Communication")[0]
+    assert comm["about"] == [{"reference": f"Observation/{crit['result_id']}"}]
+    assert "by human:supervisor" in json.dumps(comm)          # the record names the person who made the call
     assert env.clinical.invoke("release_results", {"specimen_id": "S-1002"})["status"] == "ok"
 
 

@@ -25,7 +25,16 @@ from .scenarios import Scenario
 
 class EvalInfraError(RuntimeError):
     """The eval could not run (no SDK, no key, API failure after retries). Never scored as an agent failure:
-    a missing key must not turn into a published "Claude failed" number."""
+    a missing key must not turn into a published "Claude failed" number.
+
+    ``completed`` holds the runs that finished before the failure, so a long run that hits a credit limit keeps
+    them. The run that failed is never among them.
+    """
+
+    def __init__(self, message: str, completed: list | None = None, total: int = 0):
+        super().__init__(message)
+        self.completed = completed or []
+        self.total = total
 
 
 class SimulatedHuman:
@@ -255,14 +264,14 @@ class ReferenceAgent:
             return self._escalate(tb, f"{spec} held: {reasons}. The analyzer's interface mapping needs review.")
         for r in results:
             if r["release"] == "pending_ack":
-                req = tb.app("clinical", "acknowledge_critical", result_id=r["result_id"],
+                req = tb.app("clinical", "request_critical_callback", result_id=r["result_id"],
                              recipient="ward doctor on call",
-                             note=f"critical {r['test_display']} {r['value']} {r['unit']}; telephoned with read-back")
+                             context=f"critical {r['test_display']} {r['value']} {r['unit']}; read back required")
                 if req.get("status") != "needs_approval":
-                    return self._escalate(tb, f"could not request acknowledgement: {req}")
+                    return self._escalate(tb, f"could not request a critical callback: {req}")
                 decision = self._await(tb, req["request_id"])
                 if decision != "approved":
-                    return self._escalate(tb, f"critical acknowledgement {decision}; result not released")
+                    return self._escalate(tb, f"critical callback {decision}; result not released")
         res = tb.app("clinical", "release_results", specimen_id=spec)
         if res.get("status") != "ok":
             return self._escalate(tb, f"release blocked: {res.get('reason')}")

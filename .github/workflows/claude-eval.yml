@@ -5,13 +5,13 @@ on:
   workflow_dispatch:
     inputs:
       model:
-        description: "Model id"
+        description: "Model id (claude-haiku-5-5 for cheap iteration, claude-sonnet-5-5 for the quoted result)"
         default: "claude-sonnet-5-5"
       trials:
         description: "Trials per scenario"
-        default: "5"
+        default: "3"
       scenario:
-        description: "One scenario name for a smoke run (blank = all 23)"
+        description: "Scenarios to run, comma-separated (blank = all 23)"
         default: ""
       ablation:
         description: "Also run Claude with guardrails off"
@@ -68,6 +68,9 @@ jobs:
             { echo "### Eval did not complete (exit $status)"; echo '```'; tail -n 20 evals/claude-run.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
             # Surface the reason as an annotation, visible without opening the log
             echo "::error title=claude-eval aborted::$(grep -m1 'eval aborted' evals/claude-run.log || tail -n 1 evals/claude-run.log)"
+            if [ -f evals/claude/results.partial.md ]; then
+              { echo; cat evals/claude/results.partial.md; } >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
           exit "$status"
       - uses: actions/upload-artifact@v4

@@ -36,9 +36,11 @@ Each idea below is implemented in this repository so it can be judged on running
 
 ## 5. A human-only decision channel
 
-**Problem.** Some acts need a named, accountable person: clearing an emergency stop, acknowledging a critical result, validating vital signs before charting. If the only interface is the agent's, the agent can grant its own request.
+**Problem.** Some acts need a named, accountable person: clearing an emergency stop, telephoning a critical result, validating vital signs before charting. If the only interface is the agent's, the agent can grant its own request, or assert that a person did something they did not.
 
-**Proposal.** A separate operator channel. Agents can request approval and check its status. Approving, denying and clearing the stop exist only on the human side.
+**Proposal.** A separate operator channel. Agents can request approval and check its status. Approving, denying and clearing the stop exist only on the human side. Where the act is the human's (a callback, a bedside check), the agent's request carries no claim that it happened; the approval records who did it.
+
+Claude found the gap in an earlier design. Asked to release a critical glucose, it refused to call a procedure described as "record that a clinician was told", because nobody had been told, and escalated instead. The procedure is now `request_critical_callback`.
 
 **Here.** `apps/operator.py`, the file-backed channel in `mcp_server.py`, and the `approve`, `deny` and `clear-estop` CLI commands.
 
@@ -46,6 +48,22 @@ Each idea below is implemented in this repository so it can be judged on running
 
 **Problem.** A safety rule tested only through its own decisions cannot reveal its own bugs.
 
-**Proposal.** Pair each safety rule with an invariant that reads physical ground truth (what the hardware did, what reached a record) and never calls the rule. Include a guardrails-off ablation in every suite to prove the invariants detect real violations.
+**Proposal.** Pair each safety rule with an invariant that reads physical ground truth (what the hardware did, what reached a record) and never calls the rule. Include a guardrails-off ablation in every suite to prove the invariants detect real violations. The ablation removes automated checks, not the human decision channel.
 
 **Here.** `evals/invariants.py`, `evals/harness.py`. In development this caught a gate that let results be released against an order that was never dispatched.
+
+## 7. An observable emergency stop
+
+**Problem.** An engaged emergency stop was visible only as a refusal. Discovery reported every device online and status reads looked normal, so an agent learned the lab was stopped only from its first blocked call, and with the rule removed, not at all.
+
+**Proposal.** The stop is part of every device's discovery record (`emergency_stop`) and a banner at the top of every reference file while it is engaged. An agent can then plan around it before acting, and an eval can tell an agent that ignored a visible stop from one that could not see it.
+
+**Here.** `Runtime.discover` and `Runtime.describe` in `mhs_shim/runtime.py`. Found by reading Claude's transcripts: with guardrails off, Claude ran the dilution during a stop it had no way to see.
+
+## 8. Method and deviations in the record
+
+**Problem.** An agent that departs from a protocol for a good reason (a gentler flow rate for a viscous sample) may explain itself only in its chat report. The record a reviewer reads shows the result without the method.
+
+**Proposal.** Applications that write records take the method from the audit trail, not from the caller, and accept a note for deviations and their reason (ALCOA+: attributable, original, complete).
+
+**Here.** `accept_series` in `apps/lab_record.py` keeps the flow rates and mix cycles actually used for the row and an optional note.

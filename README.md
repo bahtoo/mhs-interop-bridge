@@ -10,7 +10,7 @@ This repository works on that part, in three pieces:
 2. **Evals for the physical world.** 23 fault-injection scenarios that measure capability (does the agent recover from foam with a physical correction, compress a saturated range, split a volume) and safety (does it stop for an offline instrument, an emergency stop, failed QC, a wrong-patient result). An independent invariant checker reads ground truth, and a guardrails-off ablation proves it catches real violations.
 3. **Cookbooks** so the next lab can do this without the author in the room.
 
-> **Status.** v0.2.1. Independent work, not affiliated with or endorsed by Anthropic or any instrument vendor. The MHS SDK is in a waitlisted research preview, so `mhs_shim/` is a deliberately small stand-in that mirrors only what Anthropic has published. It is meant to be deleted when the real SDK can be imported. Anything beyond the public description is marked **PROPOSAL** and collected in [docs/proposals.md](docs/proposals.md). Instruments are simulated, vendor names are fictional, and only open, public standards are used. Not for clinical use.
+> **Status.** v0.3.0. Independent work, not affiliated with or endorsed by Anthropic or any instrument vendor. The MHS SDK is in a waitlisted research preview, so `mhs_shim/` is a deliberately small stand-in that mirrors only what Anthropic has published. It is meant to be deleted when the real SDK can be imported. Anything beyond the public description is marked **PROPOSAL** and collected in [docs/proposals.md](docs/proposals.md). Instruments are simulated, vendor names are fictional, and only open, public standards are used. Not for clinical use.
 
 ## Where this sits
 
@@ -97,17 +97,17 @@ Scenarios are grouped by what they measure:
 | Research lab (SiLA 2, file drop) | foam recovery; viscous sample first time; saturation and rerun; volume split from a SiLA constraint | reader offline before any sample is used; emergency stop |
 | Clinical lab (ASTM, HL7, FHIR) | ASTM and HL7 results normalised to LOINC and UCUM; line noise recovered by E1381; FHIR order to DiagnosticReport; nurse-validated vitals | link failure; Westgard QC failure; foam and clot; critical value approved and denied; unit drift; unroutable order; wrong-patient result; monitor artefact; unassociated monitor |
 
-After every run, twelve independent invariants check ground truth without calling any rule, interlock or gate. Examples: no same-well retry after foam, no transfer outside the SiLA constraint, no hardware motion during an emergency stop, nothing invoked on a patient-connected device, no held or unacknowledged critical result in the EHR.
+After every run, twelve independent invariants check ground truth without calling any rule, interlock or gate. Examples: no same-well retry after foam, no transfer outside the SiLA constraint, no hardware motion during an emergency stop, nothing invoked on a patient-connected device, no held result, and no critical result a human has not telephoned, in the EHR.
 
 | Agent | Task success | Blocked unsafe or invalid calls | Safety invariant violations |
 |---|---|---|---|
 | naive | 6/23 | 101 | 0 |
 | reference | 23/23 | 1 | 0 |
-| naive (guardrails off) | 0/23 | 0 | 76 |
+| naive (guardrails off) | 1/23 | 0 | 58 |
 
 * **naive** pushes for completion: generic parameters, no preflight, no QC, retries. Every unsafe attempt is refused and nothing unsafe happens.
 * **reference** is an expert playbook written as code. It is the bar an LLM agent should reach.
-* **guardrails off** removes every rule, interlock and gate from the same naive agent. The checker finds 76 violations. The two scenarios with none are stopped by the physical world itself (an offline instrument, a dead serial line).
+* **guardrails off** removes every automated rule, interlock and gate from the same naive agent, and keeps the human-approval channel. The checker finds 58 violations. Two scenarios with none are stopped by the physical world itself (an offline instrument, a dead serial line); the third, `vitals_chart`, has nothing unsafe in it because the nurse still validates.
 
 The checker has already paid for itself once. During development it caught a clinical gate that let results be released against an order that was never dispatched.
 
@@ -115,10 +115,10 @@ Run Claude on the same scenarios, with the same tools and identical response tex
 
 ```bash
 pip install -e ".[claude]" && export ANTHROPIC_API_KEY=...
-mhs-bridge eval --agents claude --model <model-id> --trials 5 --workers 4 --out evals/claude -v
+mhs-bridge eval --agents claude --model <model-id> --trials 3 --workers 4 --out evals/claude -v
 ```
 
-Claude is stochastic, so each scenario runs several times and is reported as **pass^k** (every trial passed, the reliability a lab needs) and **pass@k** (at least one passed). Claude is also run with guardrails off, which asks the more interesting question: when nothing would stop it, does it still behave like a careful scientist? Every run's transcript, including Claude's own reasoning text, is written to `transcripts.jsonl`. API and authentication failures abort the run rather than being scored as Claude failures. The manual `claude-eval` workflow runs the same command in CI from a repository secret.
+Claude is stochastic, so each scenario runs several times and is reported as **pass^k** (every trial passed, the reliability a lab needs) and **pass@k** (at least one passed). Claude is also run with guardrails off, which asks the more interesting question: when nothing would stop it, does it still behave like a careful scientist? Every run's transcript, including Claude's own reasoning text, is written to `transcripts.jsonl`. API and authentication failures abort the run rather than being scored as Claude failures; runs that finished first are kept as clearly labelled partial results. The manual `claude-eval` workflow runs the same command in CI from a repository secret.
 
 LLM results are not checked in until they have been run. Details: [docs/evals.md](docs/evals.md). Per-scenario results: [evals/results.md](evals/results.md).
 
@@ -132,6 +132,8 @@ Ideas this work suggests for MHS, each implemented here so it can be judged on r
 * **Driver interlocks that learn from device errors**, for example quarantine after foam.
 * **A human-only decision channel** that agents can request through but never grant through.
 * **Invariant-based safety evals** that read ground truth rather than the rules under test.
+* **An observable emergency stop**, shown in discovery and in every reference file, not only as a refusal.
+* **Method and deviations in the record**, taken from the audit trail, with a note for why a protocol was not followed.
 
 ## The clinical bridge (optional module)
 
@@ -139,7 +141,7 @@ Hospital and reference labs are the most regulated place lab automation runs, an
 
 1. A FHIR ServiceRequest is routed by reading analyzer catalogues through MHS, and downloaded as an ASTM host order or HL7 OML^O33.
 2. Results come back as Observations and a DiagnosticReport `basedOn` the order, with a FHIR Task tracking the order.
-3. Release is gated on QC, patient identity and critical-value acknowledgement.
+3. Release is gated on QC, patient identity, and a critical value being telephoned by a named human.
 4. Vital signs are charted only after a nurse validates them.
 
 It is optional, separate from the research-lab path, and documented in [docs/clinical-bridge.md](docs/clinical-bridge.md).
@@ -151,7 +153,7 @@ git clone https://github.com/bahtoo/mhs-interop-bridge && cd mhs-interop-bridge
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,mcp]"
 
-pytest -q                      # 62 tests
+pytest -q                      # 65 tests
 mhs-bridge devices             # discovery
 mhs-bridge describe lh-01      # the reference file an agent reads
 mhs-bridge demo research       # foam recovery, saturation and rerun

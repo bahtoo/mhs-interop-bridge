@@ -45,7 +45,7 @@ All outbound messages are transaction Bundles with idempotent PUTs.
 | Workflow | Scenario |
 |---|---|
 | Order to result over ASTM, and over HL7 (OML^O33 down, OUL^R22 up) | `order_to_result_astm`, `order_to_result_hl7` |
-| Critical result: held, acknowledged by a human, Communication, then release | `clin_critical_ack`, `clin_critical_denied` |
+| Critical result: held, telephoned by a human (approved callback), Communication, then release | `clin_critical_ack`, `clin_critical_denied` |
 | Wrong-patient result: held, recollection Task, order on hold | `order_patient_mismatch` |
 | Specimen problem: foam or clot, same cup quarantined, recollection | `clin_foam_specimen`, `hema_clot` |
 | QC failure: Westgard blocks patient release | `clin_qc_failure` |

@@ -30,9 +30,14 @@ class LabRecordApp:
             State("series_fit:<plate>:<row>", "object", "linear fit of absorbance against expected concentration for a "
                                                         "dilution row, with saturated and foam-invalid wells"),
             State("accepted", "list", "series accepted so far")], [
-            Procedure("accept_series", "Record a dilution row as a valid result.",
-                      [Param("plate", "string", "plate id"), Param("row", "string", "row letter")],
-                      safety_checks=["no saturated wells", "no wells that foamed", "R2 at least 0.98"])])
+            Procedure("accept_series", "Record a dilution row as a valid result. The record also keeps the liquid "
+                      "handling parameters actually used for the row, taken from the audit trail.",
+                      [Param("plate", "string", "plate id"), Param("row", "string", "row letter"),
+                       Param("note", "string", "deviations from the protocol and why, or other context a reviewer "
+                                               "needs", required=False)],
+                      safety_checks=["no saturated wells", "no wells that foamed", "R2 at least 0.98"])],
+            ["Record any deviation from a given protocol in the note, with the reason. A reviewer reads the record, "
+             "not the agent's report."])
 
     def read(self, state: str) -> Any:
         if state.startswith("series_fit:"):
@@ -101,9 +106,28 @@ class LabRecordApp:
         fit = self.series_fit(args["plate"], args["row"])
         if fit.get("error"):
             return {"status": "error", "error": fit["error"]}
-        self.accepted.append({"plate": args["plate"], "row": args["row"], **fit})
+        method = self.method(args["plate"], args["row"])
+        entry = {"plate": args["plate"], "row": args["row"], **fit, "method": method,
+                 "note": args.get("note", ""), "recorded_by": actor}
+        self.accepted.append(entry)
         self.runtime.record(actor, "app", self.app_id, procedure, args, "executed")
-        return {"status": "ok", "accepted": True, "r2": fit.get("r2")}
+        return {"status": "ok", "accepted": True, "r2": fit.get("r2"), "method": method, "note": entry["note"]}
+
+    def method(self, plate: str, row: str) -> dict:
+        """How the row was actually made, from executed transfers into it (ALCOA+: attributable, original).
+
+        Taken from the runtime's audit trail rather than from the caller, so the record cannot disagree with what
+        the liquid handler did.
+        """
+        prefix = f"{plate}:{row}"
+        steps = [e for e in self.runtime.audit if e.kind == "invoke" and e.target == self.lh
+                 and e.action == "Transfer" and e.outcome == "executed"
+                 and str(e.args.get("Target", "")).startswith(prefix)
+                 and str(e.args.get("Target", ""))[len(prefix):].isdigit()]
+        return {"transfers": len(steps),
+                "flow_rates_ul_s": sorted({float(e.args.get("FlowRate", 0)) for e in steps}),
+                "mix_cycles": sorted({int(e.args.get("MixCycles", 0)) for e in steps}),
+                "actors": sorted({e.actor for e in steps})}
 
     def execute_approved(self, procedure: str, args: dict, approver: str) -> dict:   # pragma: no cover
         return {"status": "error", "error": "nothing in this app needs approval"}

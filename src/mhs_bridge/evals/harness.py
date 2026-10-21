@@ -15,10 +15,10 @@ the per-run success rate. Each run's full transcript can be written to JSONL for
 from __future__ import annotations
 
 import json
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..environment import Environment, build
 from ..mhs_shim import Decision
@@ -28,7 +28,12 @@ from .scenarios import SCENARIOS, Scenario
 
 
 def disable_guardrails(env: Environment) -> None:
-    """Ablation only. Keeps malformed-call checks, drops every safety rule."""
+    """Ablation only. Keeps malformed-call checks, drops every automated safety rule.
+
+    The human-approval channel stays. It is not a guardrail on the agent but the path by which a person decides,
+    and an agent that asks for approval must keep asking for it in the ablation. Removing it (as v0.2 did) made
+    the request itself execute, so asking for a nurse's validation was scored as charting without one.
+    """
     rt = env.runtime
 
     def permissive(device_id: str, procedure: str, args: dict) -> Decision:
@@ -40,7 +45,6 @@ def disable_guardrails(env: Environment) -> None:
     rt.check = permissive
     env.lab.check = lambda procedure, args: Decision.ok()
     env.clinical.check = lambda procedure, args: Decision.ok()
-    env.clinical.NEEDS_HUMAN = set()
 
 
 @dataclass
@@ -106,13 +110,17 @@ DETERMINISTIC = {"naive", "reference"}
 
 def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablation: bool = True,
               trials: int = 1, ablation_agents: list[str] | None = None, workers: int = 1,
-              **agent_kwargs: Any) -> list[RunResult]:
+              on_result: Callable[[RunResult], None] | None = None, **agent_kwargs: Any) -> list[RunResult]:
     """Run every agent on every scenario.
 
     trials           repeats per scenario for stochastic agents; scripted agents always run once
     ablation         also run the guardrails-off ablation
     ablation_agents  agents to ablate (default: naive, and claude when it is under test)
     workers          parallel runs; each run builds its own world, so runs are independent
+    on_result        called with each run as it finishes, for progress files
+
+    Results come back in job order whatever the completion order. On an EvalInfraError no new runs start,
+    and the error carries the runs that had finished.
     """
     scenarios = scenarios or SCENARIOS
     if ablation_agents is None:
@@ -129,10 +137,43 @@ def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablati
         sc, name, guardrails, k = job
         return run_one(sc, name, guardrails, k, **({} if name in DETERMINISTIC else agent_kwargs))
 
+    done: dict[int, RunResult] = {}
+
+    def finished(i: int, r: RunResult) -> None:
+        done[i] = r
+        if on_result:
+            on_result(r)
+
+    def ordered() -> list[RunResult]:
+        return [done[i] for i in sorted(done)]
+
     if workers <= 1:
-        return [go(j) for j in jobs]
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(go, jobs))   # map keeps job order, so output is stable
+        for i, j in enumerate(jobs):
+            try:
+                finished(i, go(j))
+            except EvalInfraError as exc:
+                raise EvalInfraError(str(exc), ordered(), len(jobs)) from exc
+        return ordered()
+
+    failure: EvalInfraError | None = None
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        futures = {pool.submit(go, j): i for i, j in enumerate(jobs)}
+        for fut in as_completed(futures):
+            if fut.cancelled():
+                continue
+            try:
+                finished(futures[fut], fut.result())
+            except EvalInfraError as exc:
+                if failure is None:
+                    failure = exc
+                    for other in futures:   # stop spending: nothing new starts after the first failure
+                        other.cancel()
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+    if failure is not None:
+        raise EvalInfraError(str(failure), ordered(), len(jobs)) from failure
+    return ordered()
 
 
 def _label(r: RunResult) -> str:
@@ -180,16 +221,23 @@ def to_markdown(results: list[RunResult]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_results(results: list[RunResult], out_dir: str | Path,
-                  transcripts: bool = False) -> tuple[Path, ...]:
+def write_results(results: list[RunResult], out_dir: str | Path, transcripts: bool = False,
+                  partial: str = "") -> tuple[Path, ...]:
+    """Write results.md, results.json and optionally transcripts.jsonl.
+
+    ``partial`` names why a run stopped early. The files are then written as results.partial.* with a banner,
+    so an incomplete run cannot be mistaken for, or overwrite, a complete one.
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    md, js = out / "results.md", out / "results.json"
-    md.write_text(to_markdown(results), encoding="utf-8")
+    stem = "results.partial" if partial else "results"
+    md, js = out / f"{stem}.md", out / f"{stem}.json"
+    banner = f"**PARTIAL RESULTS, not for quoting.** {partial}\n\n" if partial else ""
+    md.write_text(banner + to_markdown(results), encoding="utf-8")
     js.write_text(json.dumps([r.record() for r in results], indent=1), encoding="utf-8")
     if not transcripts:
         return md, js
-    tr = out / "transcripts.jsonl"
+    tr = out / ("transcripts.partial.jsonl" if partial else "transcripts.jsonl")
     with tr.open("w", encoding="utf-8") as f:
         for r in results:
             f.write(json.dumps({"scenario": r.scenario, "agent": r.agent, "guardrails": r.guardrails,

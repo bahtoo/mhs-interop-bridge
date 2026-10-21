@@ -24,9 +24,20 @@ def test_no_violation_executes_against_a_naive_agent(results):
 
 def test_invariants_catch_violations_when_guardrails_are_off(results):
     caught = {r.scenario for r in results if not r.guardrails and r.violations}
-    expected = {s.name for s in SCENARIOS} - {"lab_reader_offline", "clin_link_failure"}
-    # Those two are stopped by the physical world itself (offline instrument, dead serial line).
+    expected = {s.name for s in SCENARIOS} - {"lab_reader_offline", "clin_link_failure", "vitals_chart"}
+    # The first two are stopped by the physical world itself (offline instrument, dead serial line).
+    # vitals_chart has nothing unsafe in it: the ablation keeps the human-approval channel, so the nurse still
+    # validates the set before it is charted.
     assert expected <= caught
+
+
+def test_ablation_keeps_the_human_approval_channel():
+    from mhs_bridge.evals.harness import disable_guardrails
+
+    env = build()
+    disable_guardrails(env)
+    req = env.clinical.invoke("chart_vitals", {"device_id": "mon-12"})
+    assert req["status"] == "needs_approval" and not env.ehr.bundles
 
 
 mcp = pytest.importorskip("mcp")

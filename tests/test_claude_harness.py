@@ -108,3 +108,38 @@ def test_infrastructure_failure_aborts_instead_of_scoring_claude():
 
     with pytest.raises(EvalInfraError, match="api unreachable"):
         run_suite(["claude"], [SC], trials=2, workers=2, client=Down())
+
+
+class FailsOn(FakeClient):
+    """Works like FakeClient, but raises for one scenario's task, as an exhausted credit balance would."""
+
+    def __init__(self, script, bad_task):
+        super().__init__(script)
+        self.bad_task = bad_task
+
+    def create(self, **kw):
+        first = kw["messages"][0]["content"]          # a string, or text blocks while it is the newest message
+        if (first if isinstance(first, str) else first[0]["text"]) == self.bad_task:
+            raise RuntimeError("credit balance is too low")
+        return super().create(**kw)
+
+
+def test_abort_keeps_finished_runs_and_labels_them_partial(tmp_path):
+    import pytest
+
+    from mhs_bridge.evals.agents import EvalInfraError
+
+    other = BY_NAME["lab_foam_recovery"]          # a different task text from SC
+    for workers in (1, 2):
+        with pytest.raises(EvalInfraError) as info:
+            run_suite(["claude"], [SC, other], trials=2, ablation=False, workers=workers,
+                      client=FailsOn(ESCALATE, other.task))
+        exc = info.value
+        assert exc.total == 4 and "credit balance" in str(exc)
+        assert exc.completed and {r.scenario for r in exc.completed} == {SC.name}
+        if workers == 1:
+            assert [r.trial for r in exc.completed] == [0, 1]       # both trials of the first scenario
+    paths = write_results(exc.completed, tmp_path, transcripts=True, partial="The eval stopped early.")
+    assert [p.name for p in paths] == ["results.partial.md", "results.partial.json", "transcripts.partial.jsonl"]
+    assert paths[0].read_text().startswith("**PARTIAL RESULTS, not for quoting.**")
+    assert not (tmp_path / "results.md").exists()
