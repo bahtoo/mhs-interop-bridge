@@ -153,4 +153,5 @@ def test_claude_results_carry_provenance(tmp_path):
                       scenarios=["vitals_chart"], ablation=True, started="2026-10-21T00:00:00+00:00")
     meta = json.loads(path.read_text())
     assert meta["package_version"] == __version__ and meta["model"] == "claude-haiku-5-5"
-    assert meta["anthropic_sdk"] and len(meta["git_sha"]) == 40 and meta["runs"] == 36
+    assert isinstance(meta["anthropic_sdk"], str)          # empty where the SDK is not installed (plain CI)
+    assert len(meta["git_sha"]) == 40 and meta["runs"] == 36
