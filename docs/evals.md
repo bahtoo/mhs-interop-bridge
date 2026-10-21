@@ -89,7 +89,7 @@ mhs-bridge eval --agents claude --scenario lab_foam_recovery --trials 1 --no-abl
 mhs-bridge eval --agents claude --model claude-haiku-5-5 --scenario vitals_chart,clin_critical_ack   # targeted, cheap
 ```
 
-`--out` writes `results.md`, `results.json` and, for Claude, `transcripts.jsonl` (one line per run: every tool call and result, Claude's reasoning text, and the finish call). The system prompt and tool list are cached, which keeps the repeated prefix of long multi-turn runs cheap.
+`--out` writes `results.md`, `results.json` and, for Claude, `transcripts.jsonl` and `meta.json` (code version, git SHA, model, SDK version and run settings) (one line per run: every tool call and result, Claude's reasoning text, and the finish call). The system prompt and tool list are cached, which keeps the repeated prefix of long multi-turn runs cheap.
 
 In GitHub, the manual `claude-eval` workflow (Actions, then Run workflow) runs the same command from the `ANTHROPIC_API_KEY` repository secret and uploads results and transcripts as an artifact. Nothing is committed automatically.
 

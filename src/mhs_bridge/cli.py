@@ -90,6 +90,41 @@ def cmd_sila(path: str) -> int:
     return 0
 
 
+def _now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _git_sha() -> str:
+    import os
+    import subprocess
+    if os.environ.get("GITHUB_SHA"):
+        return os.environ["GITHUB_SHA"]
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5,
+                              cwd=Path(__file__).resolve().parent).stdout.strip()
+    except Exception:  # noqa: BLE001 - provenance is best effort outside a checkout
+        return ""
+
+
+def write_meta(out: str, **run: object) -> Path:
+    """Provenance for a results folder: what ran, on which code, with which SDK. Published numbers need it."""
+    import platform
+    from importlib import metadata
+    try:
+        sdk = metadata.version("anthropic")
+    except metadata.PackageNotFoundError:
+        sdk = ""
+    meta = {"package_version": __version__, "git_sha": _git_sha(), "anthropic_sdk": sdk,
+            "python": platform.python_version(), **run, "finished": _now()}
+    if "claude" in run.get("agents", []):
+        import os
+        meta["model"] = run.get("model") or os.environ.get("MHS_CLAUDE_MODEL", "claude-sonnet-5-5")
+    path = Path(out) / "meta.json"
+    path.write_text(json.dumps(meta, indent=1), encoding="utf-8")
+    return path
+
+
 def _decide(a: argparse.Namespace, record: dict) -> int:
     if not a.operator:
         print("--as is required: decisions are attributed to a named human", file=sys.stderr)
@@ -176,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
                 with progress.open("a", encoding="utf-8") as fh:
                     fh.write(json.dumps(r.record(), default=str) + "\n")
 
+        started = _now()
         try:
             results = run_suite(agents, scenarios, ablation=not a.no_ablation, trials=a.trials, ablation_agents=ablate,
                                 workers=a.workers, on_result=log_run, **({"model": a.model} if a.model else {}))
@@ -189,7 +225,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(to_markdown(results))
         if a.out:
-            print("wrote", *write_results(results, a.out, transcripts=transcripts))
+            written = list(write_results(results, a.out, transcripts=transcripts))
+            if "claude" in agents:   # scripted results are deterministic and committed; LLM runs need provenance
+                written.append(write_meta(a.out, agents=agents, model=a.model, trials=a.trials, runs=len(results),
+                                          scenarios=[s.name for s in scenarios], ablation=not a.no_ablation,
+                                          started=started))
+            print("wrote", *written)
             progress.unlink(missing_ok=True)
         if a.verbose:
             for r in results:
