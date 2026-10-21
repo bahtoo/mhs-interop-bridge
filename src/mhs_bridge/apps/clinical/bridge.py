@@ -8,13 +8,15 @@ are not a hardware concern:
 * FHIR ServiceRequest intake and capability routing;
 * the order lifecycle, mirrored to the EHR as FHIR Task;
 * release gates: holds, patient identity against the order, order state,
-  Westgard QC, critical-value acknowledgement;
+  Westgard QC, critical-value notification;
 * critical-result notification (FHIR Communication), specimen recollection (Task);
 * charting of nurse-validated vital signs;
 * FHIR egress (Observation, DiagnosticReport, Task, Communication).
 
-Acts that a named human must own, acknowledging a critical value and charting
-vital signs, go through the operator channel.
+Acts that a named human must own, telephoning a critical value and validating
+vital signs before charting, go through the operator channel. The agent asks;
+the human acts; the approval records who did it. The agent never asserts that
+a person was told.
 """
 
 from __future__ import annotations
@@ -72,11 +74,14 @@ class ClinicalBridgeApp:
             Procedure("release_results", "Send a specimen's results to the EHR as Observations and a DiagnosticReport.",
                       [Param("specimen_id", "string", "specimen barcode")],
                       safety_checks=["no held results", "patient matches the order", "order dispatched",
-                                     "latest QC passes Westgard", "critical values acknowledged"]),
-            Procedure("acknowledge_critical", "Record that a clinician was told about a critical value. "
-                      "Needs a human approval; sends a FHIR Communication when approved.",
-                      [Param("result_id", "string", "result id"), Param("note", "string", "how they were told"),
-                       Param("recipient", "string", "who was told", required=False)]),
+                                     "latest QC passes Westgard", "critical values telephoned by a human"]),
+            Procedure("request_critical_callback", "Ask a human to telephone a critical value to the responsible "
+                      "clinician. The human makes the call. Approving the request records that they did, under their "
+                      "name, and sends a FHIR Communication; denying it means the call was not made and the result "
+                      "stays held.",
+                      [Param("result_id", "string", "result id"),
+                       Param("recipient", "string", "who should be called", required=False),
+                       Param("context", "string", "anything the caller should know", required=False)]),
             Procedure("request_recollection", "Ask the ward for a new specimen. Sends a FHIR Task; puts the order on hold.",
                       [Param("specimen_id", "string", "specimen barcode"), Param("reason", "string", "why")]),
             Procedure("chart_vitals", "Chart a bedside monitor's latest set as vital-signs Observations. "
@@ -212,19 +217,19 @@ class ClinicalBridgeApp:
                 if r["release"] == "pending_ack":
                     return Decision.block("critical_unacknowledged", f"{r['result_id']} is critical "
                                           f"({r['value']} {r['unit']}) and not acknowledged",
-                                          "Call acknowledge_critical; a human must approve it.")
+                                          "Call request_critical_callback; a human must make the call.")
                 dev, _ = self._index[r["result_id"]]
                 qc = self.qc_status(dev, r["vendor_raw"]["code"])
                 if qc.status not in ("pass", "warn"):
                     return Decision.block("qc_gate", f"QC for {r['vendor_raw']['code']} on {dev} is {qc.status} "
                                                      f"{qc.violations}", "No patient release without passing QC. Escalate.")
             return Decision.ok()
-        if procedure == "acknowledge_critical":
+        if procedure == "request_critical_callback":
             r = self._find(args["result_id"])
             if r is None:
                 return Decision.block("unknown_result", f"no result {args['result_id']}")
             if r["release"] != "pending_ack":
-                return Decision.block("not_critical", f"{args['result_id']} is not awaiting acknowledgement")
+                return Decision.block("not_critical", f"{args['result_id']} is not awaiting a critical callback")
             return Decision.ok()
         if procedure == "request_recollection":
             return Decision.ok()
@@ -251,7 +256,7 @@ class ClinicalBridgeApp:
     # invoke
     # ------------------------------------------------------------------
 
-    NEEDS_HUMAN = {"acknowledge_critical", "chart_vitals"}
+    NEEDS_HUMAN = {"request_critical_callback", "chart_vitals"}
 
     def invoke(self, procedure: str, args: dict, actor: str = "agent") -> dict:
         d = validate(self.manifest(), procedure, args) or self.check(procedure, args)
@@ -293,15 +298,15 @@ class ClinicalBridgeApp:
             return {"status": "ok", "order_id": o.order_id, "delivered": delivered}
         if procedure == "release_results":
             return self._release(args["specimen_id"])
-        if procedure == "acknowledge_critical":
+        if procedure == "request_critical_callback":
             r = self._find(args["result_id"])
             recipient = args.get("recipient") or "responsible clinician"
-            self.acks.setdefault(r["result_id"], []).append(
-                {"note": args["note"], "recipient": recipient, "approved_by": args.get("_approver", "")})
+            caller = args.get("_approver", "")
+            self.acks.setdefault(r["result_id"], []).append({"recipient": recipient, "called_by": caller})
             comm = fhir.communication(f"comm-{next(self._ids):04d}", patient_id=r["patient_id"],
                                       about=f"Observation/{r['result_id']}", recipient=recipient,
                                       text=f"Critical result {r['test_display']} {r['value']} {r['unit']} "
-                                           f"({r['interpretation']}). {args['note']}")
+                                           f"({r['interpretation']}) telephoned to {recipient} by {caller}.")
             self.ehr.send(fhir.transaction([comm]))
             return {"status": "ok", "result_id": r["result_id"], "communication": comm["id"]}
         if procedure == "request_recollection":

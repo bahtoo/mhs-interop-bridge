@@ -91,18 +91,26 @@ class Runtime:
         self.drivers[driver.device_id] = driver
 
     def discover(self) -> list[dict]:
+        # PROPOSAL: the emergency stop is part of every device's discovery record. An agent should be able to see
+        # that the lab is stopped before it plans, not only learn it from the first refused call.
         out = []
         for dev_id, d in self.drivers.items():
             m = d.manifest()
             out.append({"device_id": dev_id, "device_type": m.device_type, "risk_class": m.risk_class,
-                        "vendor": m.vendor, "model": m.model, "interface": m.interface, "online": d.online})
+                        "vendor": m.vendor, "model": m.model, "interface": m.interface, "online": d.online,
+                        "emergency_stop": self.estop})
         return out
 
     def manifest(self, device_id: str) -> Manifest:
         return self.drivers[device_id].manifest()
 
     def describe(self, device_id: str) -> str:
-        return self.manifest(device_id).reference()
+        ref = self.manifest(device_id).reference()
+        if self.estop:   # PROPOSAL, as in discover()
+            first, _, rest = ref.partition("\n")
+            ref = (f"{first}\n\n> EMERGENCY STOP ENGAGED. Every invoke on every device is refused until a human "
+                   f"clears it.\n{rest}")
+        return ref
 
     # --- read ----------------------------------------------------------------
 

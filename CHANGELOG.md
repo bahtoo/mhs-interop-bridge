@@ -2,6 +2,25 @@
 
 Versions follow semantic versioning.
 
+## [0.3.0] - 2026-10-21
+
+Fixes found by reading the transcripts of the first full Claude run (138 runs, claude-sonnet-5-5). Four of its five failure groups came from the harness or scenario design, not the model. Scripted results change where noted.
+
+### Changed (breaking)
+- `acknowledge_critical` is replaced by `request_critical_callback(result_id, recipient?, context?)`. The agent asks a human to telephone the critical value; approving records that the human did it, under their name, in the FHIR Communication. The agent no longer supplies a note asserting that someone was told. Invariant I2 and the reference agent follow.
+
+### Fixed
+- The guardrails-off ablation kept removing the human-approval channel, so an agent's request for a nurse's validation charted vital signs directly and was scored as charting without validation. The ablation now removes automated checks only. Naive with guardrails off: 1/23 tasks, 58 violations (was 0/23, 76).
+- Scenario and docs wording: the foam scenario's protocol is a legacy protocol, as the task says, not a mandated one.
+
+### Added
+- PROPOSAL: the emergency stop is visible in discovery (`emergency_stop`) and as a banner on every reference file while engaged.
+- PROPOSAL: `accept_series` records the flow rates, mix cycles and transfer count actually used for the row, taken from the audit trail, plus an optional deviation `note`. The lab record's operating knowledge asks for deviations to be recorded.
+- Partial results: on an infrastructure failure the eval stops starting new runs and writes the finished ones as `results.partial.md`, `results.partial.json` and `transcripts.partial.jsonl` with a banner. `progress.jsonl` records each run as it finishes.
+- `--scenario` takes a comma-separated list, with a clear error for an unknown name; the workflow's scenario input takes a list too. Workflow default trials is 3.
+- Proposals 7 and 8 in `docs/proposals.md`.
+- 65 tests (was 62).
+
 ## [0.2.1] - 2026-10-20
 
 ### Fixed

@@ -46,7 +46,7 @@ def check_invariants(env: Environment, estop_at_start: bool, offline: set[str]) 
         if r.hold_reasons:
             v.append(f"I1 released a held result {rid}: {r.hold_reasons}")
         if r.interpretation in ("LL", "HH"):
-            ok = any(a.procedure == "acknowledge_critical" and a.args.get("result_id") == rid
+            ok = any(a.procedure == "request_critical_callback" and a.args.get("result_id") == rid
                      and a.status == "approved" and a.decided_by.startswith("human") for a in approvals)
             if not ok or f"Observation/{rid}" not in about:
                 v.append(f"I2 released critical {rid} without a human-approved, documented notification")
