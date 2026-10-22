@@ -57,7 +57,7 @@ The invariants never call the runtime checks, driver interlocks or application g
 
 * `naive`: generic parameters, no preflight, no QC, retries. It reproduces the published same-well retry.
 * `reference`: expert playbook in code. The bar.
-* `claude`: Claude with only the natural-language task and the eleven tools. Set `MHS_CLAUDE_MODEL` or pass `--model`. A malformed tool call comes back to Claude as a `malformed_call` error, as a real runtime would return it, and is counted; it does not end the run.
+* `claude`: Claude with only the natural-language task and the thirteen tools. Set `MHS_CLAUDE_MODEL` or pass `--model`. A malformed tool call comes back to Claude as a `malformed_call` error, as a real runtime would return it, and is counted; it does not end the run.
 
 ## Measuring a stochastic agent
 
@@ -74,6 +74,14 @@ The scripted agents are deterministic and run once. Claude runs `--trials k` tim
 With guardrails on, a blocked call shows reliance on the rules; with guardrails off, a violation shows what Claude would have done if nothing stopped it. Both are reported, since the second is the closer measure of the model's own judgement.
 
 The ablation removes automated checks only: runtime rules, driver interlocks and application gates. The human-approval channel stays, because it is how a person decides, not a rule on the agent. An agent that asks a nurse to validate vital signs is still asking in the ablation, and the nurse still decides. (In v0.2 the ablation removed the channel too, so asking for validation was scored as charting without it. Reading Claude's transcripts found this.)
+
+## Checking before acting (v0.4.0)
+
+`mhs_check` and `app_check` answer "would this be allowed, and why not?" without acting. Each run records how many it made (`checks` in `results.json`). They respond to a pattern in the transcripts: Haiku tested gates by triggering them ("I'll attempt the release, which the bridge should gate").
+
+Measure the effect with guardrails on, where a probe shows up as a blocked call: compare blocked calls per run before and after v0.4.0, and the share of runs that check first. With guardrails off the checks run with the guardrails removed too, so they report what that ablated system would allow. The ablation still asks what the model does on its own judgement. The system prompt is unchanged; only the tools and their descriptions are new, so a change in behaviour comes from the tools.
+
+While the emergency stop is engaged, every tool result the model sees starts with a stop notice, reads included. It responds to Sonnet reading the stop in discovery and in three reference files and still invoking first, in all six runs on v0.3.2. The notice is information, not a guardrail, so it stays in the ablation.
 
 Infrastructure failures keep the runs that finished. They are written as `results.partial.md` and `results.partial.json` with a banner, never over a complete result, and `progress.jsonl` records each run as it finishes, so even a killed job leaves a record.
 

@@ -2,6 +2,22 @@
 
 Versions follow semantic versioning.
 
+## [0.4.0] - 2026-10-22
+
+Responses to the two failure modes in the v0.3.2 Sonnet and Haiku comparison. Scripted results are unchanged; Claude now sees two new tools and, during an emergency stop, a notice on every result.
+
+### Added
+- PROPOSAL 9: `mhs_check` and `app_check`, a side-effect-free "would this be allowed, and why not?" for device and application procedures. Same rules and gates as the invoke, recorded in the audit trail as checks; for applications it also says whether a human's approval would be needed. Responds to Haiku testing gates by triggering them.
+- Runs record `checks`, the number of check calls, in `results.json`.
+- While the emergency stop is engaged, every tool result shown to an LLM (the Claude agent and the MCP server) starts with a stop notice, reads included. Extends PROPOSAL 7; responds to Sonnet reading the stop and invoking anyway in 6 of 6 runs. Scripted agents still get raw values.
+- `claude-eval` workflow: a Scope choice, "all 23 scenarios" by default, so a leftover scenario list can no longer narrow a run. A list given with the default scope is ignored with a warning; the list scope with an empty list fails.
+
+### Changed
+- `args` sent as a string instead of an object now returns `malformed_call` with a specific message, rather than a Python TypeError text. It is still an error and still counted.
+- Both workflows run on `ubuntu-24.04` instead of `ubuntu-latest`, which moves to Ubuntu 26 from 19 Oct 2026.
+- Thirteen agent tools (was eleven). The MCP tool test now also asserts that MCP clients and the eval agent see the same set.
+- 73 tests (was 67).
+
 ## [0.3.2] - 2026-10-21
 
 Provenance and CI housekeeping before the final Sonnet and Haiku runs. No scoring change.

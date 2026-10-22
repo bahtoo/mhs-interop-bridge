@@ -60,6 +60,8 @@ Claude found the gap in an earlier design. Asked to release a critical glucose, 
 
 **Here.** `Runtime.discover` and `Runtime.describe` in `mhs_shim/runtime.py`. Found by reading Claude's transcripts: with guardrails off, Claude ran the dilution during a stop it had no way to see.
 
+**Extended in v0.4.0.** Visible was not enough. On v0.3.2, Sonnet read the stop in discovery and in three reference files in all six runs, and still went straight to invoking; with guardrails off it ran the whole task and reported success without mentioning the stop. While the stop is engaged, every tool result an agent sees now starts with a stop notice, reads included (`render` in `tools.py`). The open question this tests is whether the problem is salience or priority.
+
 ## 8. Method and deviations in the record
 
 **Problem.** An agent that departs from a protocol for a good reason (a gentler flow rate for a viscous sample) may explain itself only in its chat report. The record a reviewer reads shows the result without the method.
@@ -67,3 +69,12 @@ Claude found the gap in an earlier design. Asked to release a critical glucose, 
 **Proposal.** Applications that write records take the method from the audit trail, not from the caller, and accept a note for deviations and their reason (ALCOA+: attributable, original, complete).
 
 **Here.** `accept_series` in `apps/lab_record.py` keeps the flow rates and mix cycles actually used for the row and an optional note.
+
+## 9. Check before acting
+
+**Problem.** An agent unsure whether a safety control is active has one way to find out: try the action. Haiku did exactly that on v0.3.0 and v0.3.2 ("I'll attempt the release, which the bridge should gate"; "I'll attempt the first real step... If the stop is active, the call will be refused"). With enforcement in place the block saves it. Without enforcement, the probe is the incident: a critical result reached the EHR before anyone was phoned, and a plate moved during an emergency stop.
+
+**Proposal.** A side-effect-free check for every invoke: would it be allowed, and if not, which rule and why? The check runs the same rules as the invoke, is recorded in the audit trail as a check, and changes nothing. For applications it also says whether the act would need a human's approval. A routine is checked as submitted; its steps are checked again as they run, because later steps depend on earlier ones.
+
+**Here.** `Runtime.preview` in `mhs_shim/runtime.py`; the `mhs_check` and `app_check` tools in `tools.py` and the MCP server. Evals count checks per run, so whether a model asks instead of probes is measurable.
+

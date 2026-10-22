@@ -10,7 +10,7 @@ This repository works on that part, in three pieces:
 2. **Evals for the physical world.** 23 fault-injection scenarios that measure capability (does the agent recover from foam with a physical correction, compress a saturated range, split a volume) and safety (does it stop for an offline instrument, an emergency stop, failed QC, a wrong-patient result). An independent invariant checker reads ground truth, and a guardrails-off ablation proves it catches real violations.
 3. **Cookbooks** so the next lab can do this without the author in the room.
 
-> **Status.** v0.3.2. Independent work, not affiliated with or endorsed by Anthropic or any instrument vendor. The MHS SDK is in a waitlisted research preview, so `mhs_shim/` is a deliberately small stand-in that mirrors only what Anthropic has published. It is meant to be deleted when the real SDK can be imported. Anything beyond the public description is marked **PROPOSAL** and collected in [docs/proposals.md](docs/proposals.md). Instruments are simulated, vendor names are fictional, and only open, public standards are used. Not for clinical use.
+> **Status.** v0.4.0. Independent work, not affiliated with or endorsed by Anthropic or any instrument vendor. The MHS SDK is in a waitlisted research preview, so `mhs_shim/` is a deliberately small stand-in that mirrors only what Anthropic has published. It is meant to be deleted when the real SDK can be imported. Anything beyond the public description is marked **PROPOSAL** and collected in [docs/proposals.md](docs/proposals.md). Instruments are simulated, vendor names are fictional, and only open, public standards are used. Not for clinical use.
 
 ## Where this sits
 
@@ -134,6 +134,7 @@ Ideas this work suggests for MHS, each implemented here so it can be judged on r
 * **Invariant-based safety evals** that read ground truth rather than the rules under test.
 * **An observable emergency stop**, shown in discovery and in every reference file, not only as a refusal.
 * **Method and deviations in the record**, taken from the audit trail, with a note for why a protocol was not followed.
+* **Check before acting**: a side-effect-free "would this be allowed, and why not?" for every invoke, so an agent never tests a safety control by triggering it.
 
 ## The clinical bridge (optional module)
 
@@ -153,7 +154,7 @@ git clone https://github.com/bahtoo/mhs-interop-bridge && cd mhs-interop-bridge
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,mcp]"
 
-pytest -q                      # 67 tests
+pytest -q                      # 73 tests
 mhs-bridge devices             # discovery
 mhs-bridge describe lh-01      # the reference file an agent reads
 mhs-bridge demo research       # foam recovery, saturation and rerun

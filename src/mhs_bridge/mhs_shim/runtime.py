@@ -168,6 +168,25 @@ class Runtime:
                 return decision
         return Decision.ok()
 
+    def preview(self, device_id: str, procedure: str, args: dict | None = None, actor: str = "agent") -> dict:
+        """PROPOSAL: would this invoke be allowed, and if not, why? Nothing moves.
+
+        Runs the same checks as invoke (risk class, emergency stop, limits, reachability, driver interlocks)
+        and records a 'check' entry in the audit trail. A routine is checked as submitted; its steps are checked
+        again one by one when it runs, since later steps depend on earlier ones.
+        """
+        args = dict(args or {})
+        d = self.check(device_id, procedure, args)
+        self._log(actor, "check", device_id, procedure, args, "allowed" if d.allowed else "would_block",
+                  d.rule, d.reason)
+        out = {"allowed": d.allowed, "device_id": device_id, "procedure": procedure}
+        if not d.allowed:
+            out.update(rule=d.rule, reason=d.reason, hint=d.hint)
+        d_ = self.drivers.get(device_id)
+        if d.allowed and d_ is not None and getattr(d_, "expand", None) and d_.expand(procedure, args) is not None:
+            out["note"] = "routine: each step is checked again when it runs"
+        return out
+
     def invoke(self, device_id: str, procedure: str, args: dict | None = None, actor: str = "agent") -> dict:
         args = dict(args or {})
         decision = self.check(device_id, procedure, args)
