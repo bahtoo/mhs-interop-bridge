@@ -157,7 +157,8 @@ class SimFileDropReader:
                 if well.foam:
                     a += 0.35          # bubbles scatter light
                 w.writerow([wid, f"{min(self.SATURATION, a):.3f}"])
-            (self.folder / "export" / f"{plate_id}_{self._runs:04d}.csv").write_text(buf.getvalue(), encoding="utf-8")
+            (self.folder / "export" / f"{plate_id}_{self._runs:04d}.csv").write_text(buf.getvalue(), encoding="utf-8",
+                                                                                    newline="")
             self.world.reads.append({"plate": plate_id, "wavelength": wl})
             self.world.readings[plate_id] = {
                 row["Well"]: float(row[f"Abs{wl}"]) for row in csv.DictReader(io.StringIO(buf.getvalue()))}

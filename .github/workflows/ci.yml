@@ -2,10 +2,14 @@ name: ci
 on: [push, pull_request]
 jobs:
   test:
-    runs-on: ubuntu-24.04   # pinned: ubuntu-latest moves to Ubuntu 26
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
+        os: [ubuntu-24.04]   # pinned: ubuntu-latest moves to Ubuntu 26
         python-version: ["3.10", "3.12", "3.13"]
+        include:
+          - os: windows-latest
+            python-version: "3.12"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
