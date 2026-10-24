@@ -98,7 +98,7 @@ class LabRecordApp:
             return Decision.block("data_integrity", f"fit R2 {fit['r2']} is below 0.98")
         return Decision.ok()
 
-    def invoke(self, procedure: str, args: dict, actor: str = "agent") -> dict:
+    def invoke(self, procedure: str, args: dict, actor: str = "agent", rationale: str = "") -> dict:
         d = validate(self.manifest(), procedure, args) or self.check(procedure, args)
         if not d.allowed:
             self.runtime.record(actor, "app", self.app_id, procedure, args, "blocked", d.rule, d.reason)
@@ -129,5 +129,5 @@ class LabRecordApp:
                 "mix_cycles": sorted({int(e.args.get("MixCycles", 0)) for e in steps}),
                 "actors": sorted({e.actor for e in steps})}
 
-    def execute_approved(self, procedure: str, args: dict, approver: str) -> dict:   # pragma: no cover
+    def execute_approved(self, procedure: str, args: dict, approver: str, draft=None) -> dict:   # pragma: no cover
         return {"status": "error", "error": "nothing in this app needs approval"}

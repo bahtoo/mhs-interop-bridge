@@ -60,11 +60,11 @@ Applications use MHS the way any client does: they discover, read and invoke. Th
 
 * **Lab record** (`apps/lab_record.py`) accepts a dilution row only if no well is saturated or foamed and R2 is at least 0.98. It combines the liquid handler's plate map (expected concentration, foam) with the reader's export (absorbance, saturation). No single device can make that judgement.
 * **Clinical bridge** (`apps/clinical/`) handles FHIR orders in, capability routing over analyzer catalogues, order download, release gates, critical-result notification, recollection, vital-sign charting and FHIR out. See [clinical-bridge.md](clinical-bridge.md).
-* **Operator channel** (`apps/operator.py`) holds approvals, escalations and the emergency-stop clear. Agents can request; only humans decide.
+* **Operator channel** (`apps/operator.py`) holds the review queue, escalations and the emergency-stop clear. Every clinical message, and in copilot mode every device invoke (`apps/device_review.py`), is a draft that a named human approves, rejects or revises. Decisions are hash-chained approval events, and a draft runs only if its content still matches the approved hash. Agents can request; only humans decide.
 
 ## Tool surface
 
-`tools.py` defines thirteen tools in three groups: `mhs_*` (what MHS would give an agent), `app_*` and `operator_*`. `mhs_check` and `app_check` run the same checks and gates as the matching invoke without acting (PROPOSAL 9). The MCP server and the eval agent use the same definitions and the same response text. No tool approves, denies or clears the stop.
+`tools.py` defines thirteen tools in three groups: `mhs_*` (what MHS would give an agent), `app_*` and `operator_*`. `mhs_check` and `app_check` run the same checks and gates as the matching invoke without acting (PROPOSAL 9). The MCP server and the eval agent use the same definitions and the same response text. No tool approves, rejects, revises or clears the stop. In copilot mode (`serve --mode copilot`) `mhs_invoke` drafts instead of acting.
 
 ## Simulation
 

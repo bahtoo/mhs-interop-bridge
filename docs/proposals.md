@@ -78,3 +78,11 @@ Claude found the gap in an earlier design. Asked to release a critical glucose, 
 
 **Here.** `Runtime.preview` in `mhs_shim/runtime.py`; the `mhs_check` and `app_check` tools in `tools.py` and the MCP server. Evals count checks per run, so whether a model asks instead of probes is measurable.
 
+
+## 10. Reviewed drafts bound to what is sent
+
+**Problem.** An approval is only as good as its link to what happens next. "A human approved the release" says little if the results changed between approval and sending, if the approval record can be edited afterwards, or if the reviewer saw the agent's summary instead of the message itself.
+
+**Proposal.** An act a human must own is a draft: the gates run, the real payload is rendered and hashed, and the draft waits for review. The reviewer sees the source intent beside the structured mapping, with the origin of each field. Approval is an append-only, hash-chained event that names the payload hash. At execution the gates run again and the content is rendered again; if it no longer matches the approved hash, nothing is sent. What is sent carries the approver's signature (FHIR Provenance), and an invariant recomputes the hash from what arrived. Missing or ambiguous data becomes an exception with unverified suggestions, never a filled-in value.
+
+**Here.** `apps/operator.py` (drafts, state machine, approval events), `apps/clinical/bridge.py` (every procedure drafted), `apps/device_review.py` (copilot mode), `protocols/exceptions.py`, invariants I13 and I14. Prompted by an outside review asking for a human-in-the-loop co-pilot. The review asked for autonomous execution to be removed; this keeps device autonomy as the default mode, because the MHS question is how agents operate instruments safely, and puts every outbound clinical message behind review in both modes.

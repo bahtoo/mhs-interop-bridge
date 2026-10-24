@@ -18,6 +18,12 @@ def _run(env, dev, spec, tests):
     return env.runtime.invoke(dev, "run_specimen", {"specimen_id": spec, "tests": tests})
 
 
+def _approve(env, res, who="human:supervisor"):
+    """Every clinical procedure is drafted; a named human approves it and the result comes back from the queue."""
+    assert res["status"] == "needs_approval", res
+    return env.operator.decide(res["request_id"], who, True)["result"]
+
+
 # --- lab record ------------------------------------------------------------------------
 
 def _dilute_and_read(env, row, stock, fraction, flow, mix):
@@ -64,8 +70,11 @@ def test_lab_record_keeps_the_method_from_the_audit_and_the_deviation_note():
 def test_service_request_validation():
     with pytest.raises(OrderError, match="active"):
         parse_service_request({**SR_CHEM, "status": "draft"})
-    with pytest.raises(OrderError, match="specimen"):
-        parse_service_request({k: v for k, v in SR_CHEM.items() if k != "specimen"})
+    with pytest.raises(OrderError, match="subject"):
+        parse_service_request({k: v for k, v in SR_CHEM.items() if k != "subject"})
+    # Well formed but without a specimen: kept, with an exception, never rejected and never guessed
+    order = parse_service_request({k: v for k, v in SR_CHEM.items() if k != "specimen"})
+    assert order.specimen_id == "" and order.exceptions[0]["issue"] == "missing_accession"
 
 
 def test_routing_reads_analyzer_catalogues_through_mhs():
@@ -79,10 +88,10 @@ def test_routing_reads_analyzer_catalogues_through_mhs():
 def test_order_to_result_closes_the_loop():
     env = build()
     env.clinical.receive_order(SR_CHEM)
-    assert env.clinical.invoke("dispatch_order", {"order_id": "sr-1001"})["status"] == "ok"
+    assert _approve(env, env.clinical.invoke("dispatch_order", {"order_id": "sr-1001"}))["status"] == "ok"
     _qc(env, "chem-01", ["GLU", "K"])
     _run(env, "chem-01", "S-1001", ["GLU", "K"])
-    assert env.clinical.invoke("release_results", {"specimen_id": "S-1001"})["based_on"] == "sr-1001"
+    assert _approve(env, env.clinical.invoke("release_results", {"specimen_id": "S-1001"}))["based_on"] == "sr-1001"
     report = env.ehr.resources("DiagnosticReport")[0]
     assert report["basedOn"] == [{"reference": "ServiceRequest/sr-1001"}]
     assert [t["status"] for t in env.ehr.resources("Task")] == ["requested", "accepted", "in-progress", "completed"]
@@ -104,10 +113,10 @@ def test_partial_release_leaves_the_order_open_and_the_report_partial():
     env = build()
     env.clinical.receive_order(SR_TSH)               # GLU routable, TSH (3016-3) not
     disable_guardrails(env)                          # the only way a partly unroutable order gets dispatched
-    assert env.clinical.invoke("dispatch_order", {"order_id": "sr-3001"})["status"] == "ok"
+    assert _approve(env, env.clinical.invoke("dispatch_order", {"order_id": "sr-3001"}))["status"] == "ok"
     _qc(env, "chem-01", ["GLU"])
     _run(env, "chem-01", "S-1001", ["GLU"])
-    res = env.clinical.invoke("release_results", {"specimen_id": "S-1001"})
+    res = _approve(env, env.clinical.invoke("release_results", {"specimen_id": "S-1001"}))
     assert res["status"] == "ok" and res["outstanding_tests"] == ["3016-3"]
     assert env.clinical.orders["sr-3001"].task_status == "in-progress"
     assert env.ehr.resources("Task")[-1]["status"] == "in-progress"
@@ -117,13 +126,16 @@ def test_partial_release_leaves_the_order_open_and_the_report_partial():
 def test_patient_mismatch_held_and_recollection_puts_order_on_hold():
     env = build({"chem-01": {"patient_mismatch": ["S-1001"]}})
     env.clinical.receive_order(SR_CHEM)
-    env.clinical.invoke("dispatch_order", {"order_id": "sr-1001"})
+    _approve(env, env.clinical.invoke("dispatch_order", {"order_id": "sr-1001"}))
     _qc(env, "chem-01", ["GLU", "K"])
     _run(env, "chem-01", "S-1001", ["GLU", "K"])
     rows = env.clinical.read("results:S-1001")
     assert all(r["release"] == "held" and any("patient_mismatch" in h for h in r["hold_reasons"]) for r in rows)
     assert env.clinical.invoke("release_results", {"specimen_id": "S-1001"})["rule"] == "result_held"
-    env.clinical.invoke("request_recollection", {"specimen_id": "S-1001", "reason": "possible wrong patient"})
+    req = env.clinical.invoke("request_recollection", {"specimen_id": "S-1001", "reason": "possible wrong patient"})
+    assert env.clinical.orders["sr-1001"].task_status != "on-hold"           # nothing changes before review
+    assert not any(t["code"]["text"] == "recollect-specimen" for t in env.ehr.resources("Task"))
+    _approve(env, req)
     assert env.clinical.orders["sr-1001"].task_status == "on-hold"
     assert any(t["code"]["text"] == "recollect-specimen" for t in env.ehr.resources("Task"))
 
@@ -149,7 +161,7 @@ def test_critical_needs_human_and_sends_communication():
     comm = env.ehr.resources("Communication")[0]
     assert comm["about"] == [{"reference": f"Observation/{crit['result_id']}"}]
     assert "by human:supervisor" in json.dumps(comm)          # the record names the person who made the call
-    assert env.clinical.invoke("release_results", {"specimen_id": "S-1002"})["status"] == "ok"
+    assert _approve(env, env.clinical.invoke("release_results", {"specimen_id": "S-1002"}))["status"] == "ok"
 
 
 # --- bedside -----------------------------------------------------------------------------
@@ -177,4 +189,4 @@ def test_denied_approval_executes_nothing():
     env = build()
     req = env.clinical.invoke("chart_vitals", {"device_id": "mon-12"})
     env.operator.decide(req["request_id"], "human:nurse", False)
-    assert env.operator.status(req["request_id"])["status"] == "denied" and not env.ehr.bundles
+    assert env.operator.status(req["request_id"])["status"] == "REJECTED" and not env.ehr.bundles

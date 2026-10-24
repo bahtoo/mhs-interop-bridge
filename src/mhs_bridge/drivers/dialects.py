@@ -17,6 +17,7 @@ import yaml
 
 from ..canonical import CanonicalResult, ReleaseState
 from ..protocols import astm, hl7
+from ..protocols.exceptions import DataException, Suggestion
 
 _ids = itertools.count(1)
 
@@ -101,6 +102,35 @@ def _convert(profile: Profile, code: str, raw_value: str, raw_unit: str
         f"unit_mismatch: received {raw_unit!r}, profile expects {spec['vendor_unit']!r}"]
 
 
+def unit_candidates(profile: Profile, code: str, raw_value: str, raw_unit: str, result_id: str) -> DataException:
+    """What the value could mean in the target unit, for a reviewer. The result stays held whatever is proposed.
+
+    Each reading is checked against the test's reportable range from the profile; plausible ones come first.
+    """
+    spec = profile.tests[code]
+    unit, decimals = spec["unit"], int(spec.get("decimals", 2))
+    lo, hi = spec.get("reportable_range", [None, None])
+    try:
+        v = float(raw_value)
+    except ValueError:
+        v = None
+    readings = [(f, f"known conversion from {u} to {unit}", f"profile tests.{code}.known_units.{u}")
+                for u, f in spec.get("known_units", {}).items() if u == raw_unit]
+    readings.append((float(spec["factor"]), f"the analyzer still sends {spec['vendor_unit']} and mislabels it",
+                     f"profile tests.{code}.vendor_unit"))
+    readings.append((1.0, f"the value is already in {unit}", f"profile tests.{code}.unit"))
+    found = []
+    for factor, basis, evidence in readings:
+        value = None if v is None else round(v * factor, decimals)
+        plausible = value is not None and (lo is None or lo <= value) and (hi is None or value <= hi)
+        found.append(Suggestion({"value": value, "unit": unit}, f"if {basis}: {raw_value} {raw_unit} = {value} {unit}",
+                                [evidence, f"reportable range {lo} to {hi} {unit}"], plausible))
+    found.sort(key=lambda s: not s.plausible)
+    return DataException(f"exc-{result_id}-unit", "unit", "unit_mismatch",
+                         f"{code} arrived as {raw_value} {raw_unit!r}; the profile maps {spec['vendor_unit']!r} only. "
+                         "Fix the interface mapping, then re-run the specimen.", found)
+
+
 def _interpret(profile: Profile, code: str, value: float | None, vendor_flags: list[str]) -> str:
     spec = profile.tests[code]
     if value is not None:
@@ -138,8 +168,12 @@ def _build(profile: Profile, *, code: str, raw_value: str, raw_unit: str, flags:
     conditions = sorted({cond_map[f] for f in flags if f in cond_map})
     hold.extend(f"instrument_condition: {c}" for c in conditions)
     interp = _interpret(profile, code, value, flags) if code in profile.tests else ""
+    result_id = _next_id("res")
+    exceptions = ([unit_candidates(profile, code, raw_value, raw_unit, result_id).to_dict()]
+                  if any(h.startswith("unit_mismatch") for h in hold) else [])
     return CanonicalResult(
-        result_id=_next_id("res"),
+        result_id=result_id,
+        exceptions=exceptions,
         device_id=profile.device_id,
         specimen_id=specimen,
         patient_id=patient,

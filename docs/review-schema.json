@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mhs-bridge:review:draft:v1",
+  "title": "Reviewed draft",
+  "description": "Draft.review() in src/mhs_bridge/apps/operator.py: one drafted act for a named human to approve, reject or revise. 'intent' is what was asked for; 'proposed' is the structured mapping, each field naming its origin; 'payload' is what would be sent, and 'sha256' covers payload.content.",
+  "type": "object",
+  "required": ["request_id", "revision", "kind", "status", "target", "requested_by", "created_at", "intent", "proposed",
+               "payload", "exceptions", "gates", "history"],
+  "properties": {
+    "request_id": {"type": "string", "pattern": "^apr-[0-9]{4,}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "kind": {"enum": ["lis_order", "ehr_release", "ward_task", "critical_callback", "vitals_chart", "data_resolution",
+                      "device_invoke"]},
+    "status": {"enum": ["PENDING_REVIEW", "APPROVED", "EXECUTED", "EXECUTION_BLOCKED", "REJECTED", "SUPERSEDED"]},
+    "target": {
+      "type": "object",
+      "required": ["app", "procedure", "args"],
+      "properties": {
+        "app": {"type": "string", "description": "application id, or 'mhs' for a device invoke in copilot mode"},
+        "procedure": {"type": "string", "description": "for a device invoke: '<device_id>.<procedure>'"},
+        "args": {"type": "object"}
+      }
+    },
+    "requested_by": {"type": "string"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "intent": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "object",
+          "properties": {
+            "type": {"enum": ["ServiceRequest", "paper_request", "monitor_set", "DataException", "agent_request"]},
+            "id": {"type": "string"},
+            "text": {"type": "string", "description": "the source in words, for the left-hand column"},
+            "raw": {"type": "object", "description": "the source record as received"}
+          }
+        },
+        "agent_rationale": {"type": "string"}
+      }
+    },
+    "proposed": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "value", "from"],
+            "properties": {
+              "path": {"type": "string", "description": "where the value goes in the payload"},
+              "value": {},
+              "from": {"type": "string", "description": "where the value came from: a path into intent.source.raw, a device result, a catalogue entry, args.<name>, or 'revision <n> by <human>'"},
+              "changed_in_revision": {"type": "integer"}
+            }
+          }
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "required": ["format", "content", "sha256"],
+      "properties": {
+        "format": {"enum": ["lis_order", "fhir+json", "request", "data_resolution", "mhs_invoke"]},
+        "text": {"type": "string", "description": "the rendered message for display; transport envelope fields may be placeholders"},
+        "content": {"description": "what the hash covers"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "meta": {"type": "object", "description": "ids reserved at drafting, not covered by the hash"}
+      }
+    },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["exception_id", "field", "issue", "detail", "suggestions"],
+        "properties": {
+          "exception_id": {"type": "string"},
+          "field": {"type": "string"},
+          "issue": {"type": "string"},
+          "detail": {"type": "string"},
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["value", "basis", "evidence", "plausible", "verified"],
+              "properties": {
+                "value": {},
+                "basis": {"type": "string"},
+                "evidence": {"type": "array", "items": {"type": "string"}},
+                "plausible": {"type": "boolean"},
+                "verified": {"const": false}
+              }
+            }
+          }
+        }
+      }
+    },
+    "gates": {"type": "object", "properties": {"allowed": {"type": "boolean"}, "checked": {"type": "array", "items": {"type": "string"}}}},
+    "decided_by": {"type": "string"},
+    "decided_at": {"type": "string"},
+    "note": {"type": "string"},
+    "supersedes": {"type": "string"},
+    "superseded_by": {"type": "string"},
+    "result": {"type": "object"},
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["status", "at", "by"],
+        "properties": {"status": {"type": "string"}, "at": {"type": "string"}, "by": {"type": "string"}, "reason": {"type": "string"}}
+      }
+    }
+  }
+}

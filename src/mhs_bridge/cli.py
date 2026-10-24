@@ -15,7 +15,7 @@ from .evals.scenarios import BY_NAME, SCENARIOS
 from .protocols.sila2 import parse_feature
 
 DEMOS = {"research": ["lab_foam_recovery", "lab_saturation_rerun"],
-         "clinical": ["order_to_result_astm", "order_patient_mismatch", "clin_critical_ack"],
+         "clinical": ["order_to_result_astm", "order_missing_accession", "order_patient_mismatch", "clin_critical_ack"],
          "bedside": ["vitals_chart", "vitals_artefact"]}
 
 
@@ -30,7 +30,8 @@ def _tail(t: dict) -> str:
         if out.get("status") in ("blocked", "error"):
             return f"{out['status']} {out.get('rule') or out.get('error')}: {out.get('reason') or out.get('detail', '')}"
         if "status" in out:
-            return out["status"] + (f" {out['request_id']}" if out.get("request_id") else "")
+            return out["status"] + (f" {out['request_id']}" if out.get("request_id") else "") + (
+                f" ({out['kind']}, sha256 {out['payload_sha256'][:12]})" if out.get("payload_sha256") else "")
     if isinstance(out, list) and out and isinstance(out[0], dict) and "release" in out[0]:
         return "; ".join(f"{r['test_display'].split(' [')[0]} {r['value']} {r['unit']} {r['release']}"
                          + (f" {r['hold_reasons']}" if r["hold_reasons"] else "") for r in out)
@@ -53,7 +54,7 @@ def cmd_demo(track: str) -> int:
         for sr in sc.ehr_orders:
             r = env.clinical.receive_order(sr)
             print(f"EHR -> ServiceRequest/{r['order_id']} routed {r['routing']}")
-        tb = Toolbox(env, SimulatedHuman(sc.human_approves))
+        tb = Toolbox(env, SimulatedHuman(sc.human_denies))
         report = ReferenceAgent().run(tb, sc)
         print()
         for n, t in enumerate(tb.transcript, 1):
@@ -125,6 +126,49 @@ def write_meta(out: str, **run: object) -> Path:
     return path
 
 
+def _load(state_dir: str, name: str, default: object) -> object:
+    p = Path(state_dir) / name
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else default
+
+
+def _chain_banner(state_dir: str) -> str:
+    st = _load(state_dir, "review_status.json", {})
+    if st.get("chain") == "broken":
+        return f"REVIEW LOG BROKEN: {st['problem']}. The server applies no further decisions.\n"
+    return ""
+
+
+def cmd_show(state_dir: str, request_id: str) -> int:
+    """One draft for review: what was asked for beside what would be sent, then the payload and the exceptions."""
+    d = next((x for x in _load(state_dir, "drafts.json", []) if x["request_id"] == request_id), None)
+    if d is None:
+        print(f"no draft {request_id} in {state_dir}/drafts.json", file=sys.stderr)
+        return 2
+    t, src = d["target"], d["intent"].get("source", {})
+    print(_chain_banner(state_dir) + f"{d['request_id']}  rev {d['revision']}  {d['kind']}  {d['status']}  "
+          f"{t['app']}.{t['procedure']}  sha256 {d['payload']['sha256']}")
+    print(f"requested by {d['requested_by']} at {d['created_at']}"
+          + (f"; supersedes {d['supersedes']}" if d["supersedes"] else ""))
+    print(f"\nINTENT  {src.get('type')} {src.get('id', '')}\n  {src.get('text', '')}")
+    if d["intent"].get("agent_rationale"):
+        print(f"  agent: {d['intent']['agent_rationale']}")
+    print("\nPROPOSED MAPPING")
+    width = max([len(f["path"]) for f in d["proposed"]["fields"]] + [4])
+    for f in d["proposed"]["fields"]:
+        mark = " *" if f.get("changed_in_revision") else ""
+        print(f"  {f['path']:<{width}}  {str(f['value']):<24}  <- {f['from']}{mark}")
+    for e in d["exceptions"]:
+        print(f"\nEXCEPTION {e['exception_id']}: {e['issue']} on {e['field']}\n  {e['detail']}")
+        for s in e["suggestions"]:
+            tag = "plausible" if s["plausible"] else "implausible"
+            print(f"  - {s['value']!r} [{tag}, unverified]: {s['basis']} ({'; '.join(s['evidence'])})")
+    print(f"\nPAYLOAD ({d['payload'].get('format')})\n{d['payload'].get('text', '')}")
+    print(f"\ngates: {d['gates']}")
+    for h in d["history"]:
+        print(f"  {h['at']}  {h['status']:<17} {h['by']}  {h['reason']}")
+    return 0
+
+
 def _decide(a: argparse.Namespace, record: dict) -> int:
     if not a.operator:
         print("--as is required: decisions are attributed to a named human", file=sys.stderr)
@@ -132,7 +176,8 @@ def _decide(a: argparse.Namespace, record: dict) -> int:
     d = Path(a.state_dir)
     d.mkdir(parents=True, exist_ok=True)
     with (d / "decisions.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps({**record, "approver": f"human:{a.operator}"}) + "\n")
+        fh.write(json.dumps({**record, "approver": f"human:{a.operator}", **({"note": a.note} if getattr(a, "note", "")
+                                                                             else {})}) + "\n")
     print(f"recorded; the server applies it on its next tool call: {record}")
     return 0
 
@@ -162,20 +207,29 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--transcripts", action="store_true",
                     help="write transcripts.jsonl next to the results (on by default when claude is an agent)")
     ev.add_argument("-v", "--verbose", action="store_true")
+    ev.add_argument("--mode", choices=["autonomous", "copilot"], default="autonomous",
+                    help="copilot: every device invoke is drafted for the simulated human's review")
     sv = sub.add_parser("serve", help="run the MCP server over stdio")
     sv.add_argument("--scenario")
+    sv.add_argument("--mode", choices=["autonomous", "copilot"], default="autonomous",
+                    help="copilot: every device invoke is drafted for a human's review as well as clinical messages")
     sv.add_argument("--state-dir", default=".mhs_state")
     sv.add_argument("--audit")
     so = sub.add_parser("submit-order", help="EHR channel: drop a FHIR ServiceRequest into a running server")
     so.add_argument("file")
     so.add_argument("--state-dir", default=".mhs_state")
-    for name in ("approvals", "approve", "deny", "clear-estop"):
+    for name in ("approvals", "drafts", "show", "approve", "deny", "revise", "clear-estop"):
         p = sub.add_parser(name, help=f"human channel: {name}")
         p.add_argument("--state-dir", default=".mhs_state")
-        if name in ("approve", "deny"):
+        if name in ("show", "approve", "deny", "revise"):
             p.add_argument("request_id")
-        if name != "approvals":
+        if name in ("approve", "deny", "revise", "clear-estop"):
             p.add_argument("--as", dest="operator")
+        if name in ("approve", "deny", "revise"):
+            p.add_argument("--note", default="")
+        if name == "revise":
+            p.add_argument("--set", action="append", default=[], metavar="ARG=VALUE",
+                           help="change one argument of the draft; repeatable. VALUE is JSON if it parses, else text")
 
     a = ap.parse_args(argv)
     if a.cmd == "devices":
@@ -214,7 +268,8 @@ def main(argv: list[str] | None = None) -> int:
         started = _now()
         try:
             results = run_suite(agents, scenarios, ablation=not a.no_ablation, trials=a.trials, ablation_agents=ablate,
-                                workers=a.workers, on_result=log_run, **({"model": a.model} if a.model else {}))
+                                workers=a.workers, on_result=log_run, mode=a.mode,
+                                **({"model": a.model} if a.model else {}))
         except EvalInfraError as exc:
             kept = f"{len(exc.completed)} of {exc.total} runs finished before it"
             if a.out and exc.completed:
@@ -229,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
             if "claude" in agents:   # scripted results are deterministic and committed; LLM runs need provenance
                 written.append(write_meta(a.out, agents=agents, model=a.model, trials=a.trials, runs=len(results),
                                           scenarios=[s.name for s in scenarios], ablation=not a.no_ablation,
-                                          started=started))
+                                          mode=a.mode, started=started))
             print("wrote", *written)
             progress.unlink(missing_ok=True)
         if a.verbose:
@@ -237,20 +292,40 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"- {r.agent}{'' if r.guardrails else ' (off)'} {r.scenario}: {r.reason}; {r.violations[:2]}")
     elif a.cmd == "serve":
         from .mcp_server import main as serve
-        serve(a.scenario, a.state_dir, a.audit)
+        serve(a.scenario, a.state_dir, a.audit, a.mode)
     elif a.cmd == "submit-order":
         sr = json.loads(Path(a.file).read_text())
         inbox = Path(a.state_dir) / "inbox"
         inbox.mkdir(parents=True, exist_ok=True)
         (inbox / f"{sr['id']}.json").write_text(json.dumps(sr), encoding="utf-8")
         print(f"ServiceRequest/{sr['id']} queued for the clinical bridge")
-    elif a.cmd == "approvals":
-        p = Path(a.state_dir) / "pending.json"
-        pending = json.loads(p.read_text()) if p.exists() else []
-        print("\n".join(f"{r['request_id']}  {r['app']}.{r['procedure']}  {json.dumps(r['args'])}" for r in pending)
-              or "no pending approvals")
+    elif a.cmd in ("approvals", "drafts"):
+        rows = _load(a.state_dir, "pending.json" if a.cmd == "approvals" else "drafts.json", [])
+        print(_chain_banner(a.state_dir) + ("\n".join(
+            f"{r['request_id']}  {r['status']:<17} {r['kind']:<17} {r['target']['app']}.{r['target']['procedure']}  "
+            f"{json.dumps(r['target']['args'])}" + (f"  [{len(r['exceptions'])} exception(s)]" if r["exceptions"] else "")
+            for r in rows) or ("no pending approvals" if a.cmd == "approvals" else "no drafts")))
+        if rows and a.cmd == "approvals":
+            print("\nmhs-bridge show <id> to review one; approve, deny or revise it --as <your name>")
+    elif a.cmd == "show":
+        return cmd_show(a.state_dir, a.request_id)
     elif a.cmd in ("approve", "deny"):
         return _decide(a, {"request_id": a.request_id, "approve": a.cmd == "approve"})
+    elif a.cmd == "revise":
+        changes = {}
+        for item in a.set:
+            key, sep, raw = item.partition("=")
+            if not sep:
+                print(f"--set {item!r}: expected ARG=VALUE", file=sys.stderr)
+                return 2
+            try:
+                changes[key] = json.loads(raw)
+            except json.JSONDecodeError:
+                changes[key] = raw
+        if not changes:
+            print("revise needs at least one --set ARG=VALUE", file=sys.stderr)
+            return 2
+        return _decide(a, {"type": "revise", "request_id": a.request_id, "set": changes})
     elif a.cmd == "clear-estop":
         return _decide(a, {"type": "clear_estop"})
     return 0

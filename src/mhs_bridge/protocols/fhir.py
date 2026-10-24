@@ -163,6 +163,61 @@ def communication(comm_id: str, *, patient_id: str, about: str, text: str, recip
     }
 
 
+REVIEW_TAG = "urn:mhs-bridge:review"
+_VOLATILE = {"authoredOn", "lastModified", "sent", "meta"}      # set when a message is sent, not when it is drafted
+_RECORD_TYPES = {"Provenance", "AuditEvent"}                    # records about a message, added at send time
+
+
+def clinical_content(bundle: dict) -> list[dict]:
+    """What an approval covers in a Bundle: its resources without send-time fields or records about the send.
+
+    Recomputing this from what reached the EHR and comparing its hash with the approved one shows that what was
+    sent is what a human approved.
+    """
+    return [{k: v for k, v in e["resource"].items() if k not in _VOLATILE} for e in bundle["entry"]
+            if e["resource"]["resourceType"] not in _RECORD_TYPES]
+
+
+def provenance(prov_id: str, targets: list[str], *, approver: str, at: str, request_id: str,
+               payload_sha256: str, activity: str) -> dict:
+    """Who authorised these resources and when: the approver's signature on the reviewed draft."""
+    return {
+        "resourceType": "Provenance",
+        "id": prov_id,
+        "target": [{"reference": t} for t in targets],
+        "recorded": at,
+        "activity": {"text": activity},
+        "agent": [{"type": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/provenance-participant-type",
+                                        "code": "verifier"}]},
+                   "who": {"display": approver}}],
+        "signature": [{"type": [{"system": "urn:iso-astm:E1762-95:2013", "code": "1.2.840.10065.1.12.1.5",
+                                 "display": "Verification Signature"}],
+                       "when": at, "who": {"display": approver}, "sigFormat": "application/sha256",
+                       "data": payload_sha256}],
+        "entity": [{"role": "source", "what": {"identifier": {"system": REVIEW_TAG, "value": request_id}}}],
+    }
+
+
+def audit_event(ae_id: str, *, action: str, at: str, who: str, what: str, request_id: str, payload_sha256: str,
+                reason: str = "") -> dict:
+    """One discrete step in a draft's lifecycle (drafted, approved, rejected, executed, ...)."""
+    ae: dict = {
+        "resourceType": "AuditEvent",
+        "id": ae_id,
+        "type": {"system": REVIEW_TAG, "code": "review", "display": "Human review of an outbound message"},
+        "subtype": [{"system": REVIEW_TAG, "code": action}],
+        "recorded": at,
+        "outcome": "4" if action in ("EXECUTION_BLOCKED",) else "0",
+        "agent": [{"who": {"display": who}, "requestor": not who.startswith("human:")}],
+        "source": {"observer": {"display": "mhs-interop-bridge"}},
+        "entity": [{"what": {"identifier": {"system": REVIEW_TAG, "value": request_id}}, "description": what,
+                    "detail": [{"type": "payload_sha256", "valueString": payload_sha256}]}],
+    }
+    if reason:
+        ae["outcomeDesc"] = reason
+    return ae
+
+
 def _now() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat(timespec="seconds")

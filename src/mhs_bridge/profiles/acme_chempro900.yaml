@@ -27,6 +27,7 @@ tests:
     ref_high: 99
     critical_low: 40
     critical_high: 500
+    reportable_range: [10, 1000]   # review aid only
   K:
     decimals: 1
     loinc: "2823-3"

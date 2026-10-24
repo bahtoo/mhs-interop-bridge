@@ -8,6 +8,9 @@
 
 ``faults`` is keyed by device id (plus ``mhs`` for the runtime), for example
 ``{"lh-01": {"offline": True}, "chem-01": {"qc_shift": {"GLU": 3.5}}, "mhs": {"estop": True}}``.
+
+``mode`` is ``autonomous`` (an agent's device invokes run at once, behind limits and interlocks) or ``copilot``
+(they are drafted for a human's review). Clinical messages are reviewed in both modes.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from typing import Any
 
 from .apps.clinical.bridge import ClinicalBridgeApp
 from .apps.clinical.ehr import MemoryEhr
+from .apps.device_review import DeviceReview
 from .apps.lab_record import LabRecordApp
 from .apps.operator import OperatorChannel
 from .drivers.analyzer import AnalyzerDriver
@@ -43,14 +47,21 @@ class Environment:
     clinical: ClinicalBridgeApp
     ehr: Any
     folder: Path
+    devices: DeviceReview
+    mode: str = "autonomous"
 
     @property
     def apps(self) -> dict[str, Any]:
         return {self.lab.app_id: self.lab, self.clinical.app_id: self.clinical}
 
 
+MODES = ("autonomous", "copilot")
+
+
 def build(faults: dict | None = None, folder: str | Path | None = None, audit_path: str | Path | None = None,
-          ehr: Any | None = None) -> Environment:
+          ehr: Any | None = None, mode: str = "autonomous") -> Environment:
+    if mode not in MODES:
+        raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
     faults = faults or {}
     folder = Path(folder or tempfile.mkdtemp(prefix="mhs-bridge-"))
     world = LabWorld.default()
@@ -77,4 +88,4 @@ def build(faults: dict | None = None, folder: str | Path | None = None, audit_pa
     ehr = ehr or MemoryEhr()
     lab = LabRecordApp(runtime, operator)
     clinical = ClinicalBridgeApp(runtime, operator, ehr)
-    return Environment(world, runtime, operator, lab, clinical, ehr, folder)
+    return Environment(world, runtime, operator, lab, clinical, ehr, folder, DeviceReview(runtime, operator), mode)
