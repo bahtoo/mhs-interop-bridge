@@ -31,6 +31,13 @@ def test_invariants_catch_violations_when_guardrails_are_off(results):
     assert expected <= caught
 
 
+def test_reference_agent_passes_every_scenario_in_copilot_mode():
+    copilot = run_suite(["reference"], ablation=False, mode="copilot")
+    assert not [(r.scenario, r.reason) for r in copilot if not r.success]
+    assert all(r.mode == "copilot" and r.approvals for r in copilot if r.track == "research"
+               and r.scenario not in ("lab_reader_offline", "lab_emergency_stop"))
+
+
 def test_ablation_keeps_the_human_approval_channel():
     from mhs_bridge.evals.harness import disable_guardrails
 

@@ -14,9 +14,9 @@ on:
         description: "Which scenarios"
         type: choice
         options:
-          - "all 23 scenarios"
+          - "all scenarios"
           - "only the scenarios listed below"
-        default: "all 23 scenarios"
+        default: "all scenarios"
       scenario:
         description: "Scenario list, comma-separated (used only when scope says so)"
         default: ""
@@ -68,7 +68,7 @@ jobs:
             if [ -z "$SCENARIO" ]; then echo "::error title=claude-eval::Scope is 'only the scenarios listed below' but the list is empty."; exit 2; fi
             args+=(--scenario "$SCENARIO")
           elif [ -n "$SCENARIO" ]; then
-            echo "::warning title=claude-eval::Scope is all 23 scenarios; ignoring the scenario list: $SCENARIO"
+            echo "::warning title=claude-eval::Scope is all scenarios; ignoring the scenario list: $SCENARIO"
           fi
           if [ "$ABLATION" != "true" ]; then args+=(--no-ablation); fi
           status=0

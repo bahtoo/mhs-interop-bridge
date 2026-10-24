@@ -7,10 +7,12 @@ MHS gives AI agents a standard way to discover and safely operate lab instrument
 This repository works on that part, in three pieces:
 
 1. **Drivers that bring open protocols into MHS.** A generic SiLA 2 driver generates an MHS manifest from the instrument's own Feature Definition. A file-drop driver covers instruments with no API at all. Clinical analyzers speaking ASTM E1381/E1394 or HL7 v2 get their own driver, and a bedside monitor is read-only by design. Reusable interlocks (foam quarantine, capacity, labware location) let a driver refuse what it knows to be physically unsafe.
-2. **Evals for the physical world.** 23 fault-injection scenarios that measure capability (does the agent recover from foam with a physical correction, compress a saturated range, split a volume) and safety (does it stop for an offline instrument, an emergency stop, failed QC, a wrong-patient result). An independent invariant checker reads ground truth, and a guardrails-off ablation proves it catches real violations.
+2. **Evals for the physical world.** 24 fault-injection scenarios that measure capability (does the agent recover from foam with a physical correction, compress a saturated range, split a volume) and safety (does it stop for an offline instrument, an emergency stop, failed QC, a wrong-patient result). An independent invariant checker reads ground truth, and a guardrails-off ablation proves it catches real violations.
 3. **Cookbooks** so the next lab can do this without the author in the room.
 
-> **Status.** v0.4.0. Independent work, not affiliated with or endorsed by Anthropic or any instrument vendor. The MHS SDK is in a waitlisted research preview, so `mhs_shim/` is a deliberately small stand-in that mirrors only what Anthropic has published. It is meant to be deleted when the real SDK can be imported. Anything beyond the public description is marked **PROPOSAL** and collected in [docs/proposals.md](docs/proposals.md). Instruments are simulated, vendor names are fictional, and only open, public standards are used. Not for clinical use.
+Around all three, **a human stays in the loop**. Every message the bridge would send to an analyzer, the EHR or a ward is first a draft: rendered, hashed, and held in `PENDING_REVIEW` until a named person approves, rejects or revises it. In copilot mode every device invoke is reviewed the same way.
+
+> **Status.** v0.5.0. Independent work, not affiliated with or endorsed by Anthropic or any instrument vendor. The MHS SDK is in a waitlisted research preview, so `mhs_shim/` is a deliberately small stand-in that mirrors only what Anthropic has published. It is meant to be deleted when the real SDK can be imported. Anything beyond the public description is marked **PROPOSAL** and collected in [docs/proposals.md](docs/proposals.md). Instruments are simulated, vendor names are fictional, and only open, public standards are used. Not for clinical use.
 
 ## Where this sits
 
@@ -18,8 +20,9 @@ This repository works on that part, in three pieces:
 flowchart LR
     AGENT[Agent<br/>Claude over MCP] -->|mhs_* tools| MHS
     AGENT -->|app_* tools| APPS
-    AGENT -->|operator_* tools| OP[Operator channel<br/>escalate, request approval]
-    HUMAN[Human] -->|approve, deny,<br/>clear e-stop| OP
+    AGENT -->|operator_* tools| OP[Operator channel<br/>review queue, escalations]
+    HUMAN[Human] -->|approve, reject, revise,<br/>clear e-stop| OP
+    APPS -->|every outbound message<br/>is a draft| OP
     subgraph MHS["MHS (stand-in here; the real SDK replaces it)"]
         RT[discovery, read and write primitives,<br/>manifest limits, routines, audit]
     end
@@ -97,17 +100,17 @@ Scenarios are grouped by what they measure:
 | Research lab (SiLA 2, file drop) | foam recovery; viscous sample first time; saturation and rerun; volume split from a SiLA constraint | reader offline before any sample is used; emergency stop |
 | Clinical lab (ASTM, HL7, FHIR) | ASTM and HL7 results normalised to LOINC and UCUM; line noise recovered by E1381; FHIR order to DiagnosticReport; nurse-validated vitals | link failure; Westgard QC failure; foam and clot; critical value approved and denied; unit drift; unroutable order; wrong-patient result; monitor artefact; unassociated monitor |
 
-After every run, twelve independent invariants check ground truth without calling any rule, interlock or gate. Examples: no same-well retry after foam, no transfer outside the SiLA constraint, no hardware motion during an emergency stop, nothing invoked on a patient-connected device, no held result, and no critical result a human has not telephoned, in the EHR.
+After every run, fourteen independent invariants check ground truth without calling any rule, interlock or gate. Examples: no same-well retry after foam, no transfer outside the SiLA constraint, no hardware motion during an emergency stop, nothing invoked on a patient-connected device, no held result, and no critical result a human has not telephoned, in the EHR.
 
 | Agent | Task success | Blocked unsafe or invalid calls | Safety invariant violations |
 |---|---|---|---|
-| naive | 6/23 | 101 | 0 |
-| reference | 23/23 | 1 | 0 |
-| naive (guardrails off) | 1/23 | 0 | 58 |
+| naive | 6/24 | 108 | 0 |
+| reference | 24/24 | 1 | 0 |
+| naive (guardrails off) | 1/24 | 0 | 61 |
 
 * **naive** pushes for completion: generic parameters, no preflight, no QC, retries. Every unsafe attempt is refused and nothing unsafe happens.
 * **reference** is an expert playbook written as code. It is the bar an LLM agent should reach.
-* **guardrails off** removes every automated rule, interlock and gate from the same naive agent, and keeps the human-approval channel. The checker finds 58 violations. Two scenarios with none are stopped by the physical world itself (an offline instrument, a dead serial line); the third, `vitals_chart`, has nothing unsafe in it because the nurse still validates.
+* **guardrails off** removes every automated rule, interlock and gate from the same naive agent, and keeps the human-approval channel. The checker finds 61 violations. The simulated reviewer approves without reading, so this also shows what review alone does not catch. Two scenarios with none are stopped by the physical world itself (an offline instrument, a dead serial line); the third, `vitals_chart`, has nothing unsafe in it because the nurse still validates.
 
 The checker has already paid for itself once. During development it caught a clinical gate that let results be released against an order that was never dispatched.
 
@@ -134,6 +137,7 @@ Ideas this work suggests for MHS, each implemented here so it can be judged on r
 * **Invariant-based safety evals** that read ground truth rather than the rules under test.
 * **An observable emergency stop**, shown in discovery and in every reference file, not only as a refusal.
 * **Method and deviations in the record**, taken from the audit trail, with a note for why a protocol was not followed.
+* **Reviewed drafts bound to what is sent**: a human approves a rendered, hashed payload; it is sent only if it still matches, with the approver's Provenance.
 * **Check before acting**: a side-effect-free "would this be allowed, and why not?" for every invoke, so an agent never tests a safety control by triggering it.
 
 ## The clinical bridge (optional module)
@@ -144,8 +148,18 @@ Hospital and reference labs are the most regulated place lab automation runs, an
 2. Results come back as Observations and a DiagnosticReport `basedOn` the order, with a FHIR Task tracking the order.
 3. Release is gated on QC, patient identity, and a critical value being telephoned by a named human.
 4. Vital signs are charted only after a nurse validates them.
+5. Every message above is a draft until a named human approves it. Missing data, such as an order without an accession, becomes an exception with unverified suggestions that a person confirms; the bridge never fills the gap itself.
 
 It is optional, separate from the research-lab path, and documented in [docs/clinical-bridge.md](docs/clinical-bridge.md).
+
+## Human review: two modes
+
+| Mode | An agent's device invokes | Clinical messages (LIS, EHR, ward) |
+|---|---|---|
+| `autonomous` (default) | run at once, behind manifest limits and driver interlocks | drafted for review |
+| `copilot` | drafted for review; run under the approver's name, every check repeated | drafted for review |
+
+A draft holds what was asked for (the ServiceRequest, the agent's rationale) beside what would be sent (each field with its origin), the rendered message and its SHA-256. Decisions are approval events, append-only and hash-chained. A draft runs only if its gates still pass and its content still matches the approved hash. The emergency stop is never drafted. The output shape for a review dashboard is in [docs/review-schema.json](docs/review-schema.json).
 
 ## Quickstart
 
@@ -156,28 +170,32 @@ git clone https://github.com/bahtoo/mhs-interop-bridge && cd mhs-interop-bridge
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev,mcp]"
 
-pytest -q                      # 73 tests
+pytest -q                      # 85 tests
 mhs-bridge devices             # discovery
 mhs-bridge describe lh-01      # the reference file an agent reads
-mhs-bridge scenarios           # the 23 eval scenarios, one line each
+mhs-bridge scenarios           # the 24 eval scenarios, one line each
 mhs-bridge demo research       # foam recovery, saturation and rerun
 mhs-bridge demo clinical       # FHIR order to result, wrong patient, critical value
 mhs-bridge demo bedside        # nurse-validated vitals, artefact held
 mhs-bridge eval --out evals    # all scenarios; reproduces evals/results.md
 ```
 
-Useful `eval` options: `--scenario <name>` (repeatable or comma-separated), `--agents naive,reference,claude`, `--no-ablation`, `--trials`, `--workers`, `--transcripts`, `-v`.
+Useful `eval` options: `--scenario <name>` (repeatable or comma-separated), `--agents naive,reference,claude`, `--mode copilot`, `--no-ablation`, `--trials`, `--workers`, `--transcripts`, `-v`.
 
 As an MCP server, with the human channel beside it:
 
 ```bash
 claude mcp add mhs-bridge -- mhs-bridge serve --scenario lab_foam_recovery --audit audit.jsonl
-mhs-bridge approvals                          # what agents have asked a human for
-mhs-bridge approve apr-0001 --as your-name    # or deny; clear-estop --as your-name
+#   add --mode copilot to have every device invoke reviewed too
+mhs-bridge approvals                          # drafts waiting for review
+mhs-bridge show apr-0001                      # intent beside the proposed mapping, the message, exceptions
+mhs-bridge approve apr-0001 --as your-name --note "checked against the form"   # or deny
+mhs-bridge revise apr-0001 --set value=S-1001 --as your-name                   # redline: a new revision
+mhs-bridge drafts                             # every draft and its state; clear-estop --as your-name
 mhs-bridge submit-order examples/service_request_cbc.json   # EHR side of the clinical bridge
 ```
 
-For other MCP clients, [examples/mcp_config.json](examples/mcp_config.json) has the same server as an `mcpServers` entry. The server and the human-channel commands share state through `.mhs_state/` (change it with `--state-dir`), so run them from the same directory. Every human decision needs `--as <name>`, because decisions are attributed to a named person.
+For other MCP clients, [examples/mcp_config.json](examples/mcp_config.json) has the same server as an `mcpServers` entry. The server and the human-channel commands share state through `.mhs_state/` (change it with `--state-dir`), so run them from the same directory. Every human decision needs `--as <name>`, because decisions are attributed to a named person. The server keeps the approval events in `.mhs_state/review.jsonl`, verifies the chain on every call, and stops applying decisions if the file has been altered.
 
 ## Documentation
 
@@ -199,16 +217,16 @@ For other MCP clients, [examples/mcp_config.json](examples/mcp_config.json) has 
 ```text
 src/mhs_bridge/
   mhs_shim/          stand-in for the MHS runtime (delete when the SDK is public)
-  protocols/         SiLA 2 FDL, ASTM E1381/E1394, HL7 v2 and MLLP, LIS orders, FHIR R4
+  protocols/         SiLA 2 FDL, ASTM E1381/E1394, HL7 v2 and MLLP, LIS orders, FHIR R4, data exceptions
   features/          SiLA 2 Feature Definitions for the simulated instruments
   profiles/          device profiles: operating knowledge, error hints, interlocks, dialects
   drivers/           sila2, filedrop, analyzer, monitor, interlocks, routines   <- the contribution
   sim/               simulated instruments and physical ground truth
-  apps/              lab record, clinical bridge, operator channel
+  apps/              lab record, clinical bridge, operator channel and review queue, copilot device review
   evals/             scenarios, agents, invariants, harness
   tools.py           the agent tool surface (shared by MCP and evals)
   mcp_server.py, cli.py
-docs/                see Documentation above
+docs/                see Documentation above; review-schema.json for review dashboards
 evals/               checked-in scripted results (results.md, results.json)
 examples/            MCP client config and FHIR ServiceRequests for submit-order
 tests/

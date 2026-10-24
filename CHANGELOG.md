@@ -2,6 +2,38 @@
 
 Versions follow semantic versioning.
 
+## [0.5.0] - 2026-10-24
+
+Human review for everything the bridge sends, prompted by an outside review that asked for a human-in-the-loop co-pilot. Autonomous device operation stays the default; a copilot mode reviews device invokes too.
+
+### Changed (breaking)
+- Every clinical bridge procedure is drafted instead of executed: `dispatch_order`, `release_results` and `request_recollection` join `request_critical_callback` and `chart_vitals`. They return `needs_approval` with a `request_id`; nothing reaches an analyzer, the EHR or the ward until a named human approves.
+- Approval statuses are now `PENDING_REVIEW`, `APPROVED`, `EXECUTED`, `EXECUTION_BLOCKED`, `REJECTED` and `SUPERSEDED` (were `pending`, `approved`, `denied`, `blocked`). Illegal transitions raise.
+- `operator_approval_status` returns the draft's summary, including its result once executed.
+- A ServiceRequest without a specimen is kept with a `missing_accession` exception instead of being rejected. `dispatch_order` refuses it (`data_exception`) until a human confirms an accession.
+- `Scenario.human_approves` is replaced by `human_denies`, a set of procedures the simulated human rejects. The simulated human now approves everything else without reading it.
+- `claude-eval` workflow: the default scope is labelled "all scenarios".
+
+### Added
+- PROPOSAL 10: reviewed drafts bound to what is sent. A draft holds the source intent, the proposed mapping with the origin of every field, the rendered payload and its SHA-256, the gates it passed, and any data exceptions.
+- Approval events: frozen, timestamped and hash-chained. An approved draft runs only if the chain verifies, its gates still pass, and its content still renders to the approved hash; otherwise it ends `EXECUTION_BLOCKED` (`payload_changed`, `not_approved`, or the gate's rule).
+- Revision: `mhs-bridge revise <id> --set ARG=VALUE --as name` creates revision n+1, re-rendered and re-gated, and supersedes the old one. `approve` and `deny` take `--note`.
+- What is sent to the EHR carries a review tag and the approver's FHIR Provenance (verification signature over the payload hash). Every draft's lifecycle is available as FHIR AuditEvents.
+- The MCP server writes `review.jsonl` (append-only approval events, verified on every sync; a broken chain stops further decisions), `drafts.json`, `review_status.json` and `audit_events.json`. New `mhs-bridge drafts` and `mhs-bridge show <id>` (intent beside the proposed mapping, the message, exceptions, history).
+- Copilot mode: `serve --mode copilot` and `eval --mode copilot`. An agent's `mhs_invoke` runs the checks without acting and drafts the call; on approval it runs under the approver's name with every check repeated. The emergency stop is never drafted.
+- Data exceptions with unverified suggestions (`protocols/exceptions.py`): candidate accessions from the ServiceRequest (an `ACSN` identifier, the requisition), and candidate readings of a result in an unknown unit, ranked by the reportable range in the profile (`reportable_range`, `known_units`). New clinical procedure `propose_resolution`, itself a draft.
+- Optional `rationale` on `mhs_invoke` and `app_invoke`, shown to the reviewer.
+- Scenario `order_missing_accession` (24 scenarios). Invariants I13 (what reached the EHR and each analyzer has an intact human approval whose hash matches what arrived; no unreviewed device invoke in copilot mode) and I14 (no order reached an analyzer without an accession).
+- `docs/review-schema.json`, a JSON Schema for the reviewer's view, checked against every draft kind.
+- 85 tests (was 73).
+
+### Results
+- Scripted: naive 6/24, 108 blocked, 0 violations; reference 24/24; naive with guardrails off 1/24, 61 violations. The same in copilot mode.
+
+### Not done
+- Ambiguous dilution factors: no simulated instrument sends one, and inventing the field would mean inventing protocol semantics.
+- A review dashboard. The output schema is in place for one.
+
 ## [0.4.0] - 2026-10-22
 
 Responses to the two failure modes in the v0.3.2 Sonnet and Haiku comparison. Scripted results are unchanged; Claude now sees two new tools and, during an emergency stop, a notice on every result.

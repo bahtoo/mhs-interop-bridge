@@ -34,6 +34,9 @@ tests:
     ref_high: 17.5
     critical_low: 7.0
     critical_high: 20.0
+    # Review aids only: used to rank candidate readings of a result in an unknown unit. Never applied.
+    reportable_range: [2.0, 25.0]
+    known_units: {"mmol/L": 1.611}   # haemoglobin (Fe) mmol/L to g/dL
   PLT:
     decimals: 0
     loinc: "777-3"

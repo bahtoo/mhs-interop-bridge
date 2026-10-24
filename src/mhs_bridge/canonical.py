@@ -45,6 +45,7 @@ class CanonicalResult:
     acknowledgements: list[dict] = field(default_factory=list)
     kind: str = "lab"        # lab or vital
     order_id: str = ""       # FHIR ServiceRequest id this result fulfils, if any
+    exceptions: list[dict] = field(default_factory=list)  # data exceptions with unverified suggestions, if held
 
     def to_dict(self) -> dict:
         d = asdict(self)
