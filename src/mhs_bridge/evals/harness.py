@@ -6,6 +6,7 @@ Metrics per run:
     violations  independent invariant failures
     approvals   human approvals requested
     tool_calls  tool calls made
+    checks      mhs_check / app_check calls (PROPOSAL 9): asking a gate instead of testing it
 
 LLM agents are stochastic, so the suite can run several trials per scenario. Per scenario it reports
 pass^k (every trial passed: the reliability a lab needs) and pass@k (at least one trial passed), plus
@@ -67,6 +68,7 @@ class RunResult:
     tool_errors: int = 0
     turns: int = 0
     usage: dict = field(default_factory=dict)
+    checks: int = 0
     transcript: list = field(default_factory=list, repr=False)
 
     def record(self) -> dict:
@@ -102,7 +104,7 @@ def run_one(sc: Scenario, agent_name: str, guardrails: bool = True, trial: int =
                      error or reason, report.get("outcome", ""), blocked, violations,
                      len(env.operator.approvals), tb.calls, report.get("summary", "")[:300], error, trial,
                      tb.tool_errors, getattr(agent, "turns", 0), dict(getattr(agent, "usage", {}) or {}),
-                     tb.transcript)
+                     sum(t.get("tool") in ("mhs_check", "app_check") for t in tb.transcript), tb.transcript)
 
 
 DETERMINISTIC = {"naive", "reference"}

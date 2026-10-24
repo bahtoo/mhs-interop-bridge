@@ -64,7 +64,7 @@ Applications use MHS the way any client does: they discover, read and invoke. Th
 
 ## Tool surface
 
-`tools.py` defines eleven tools in three groups: `mhs_*` (what MHS would give an agent), `app_*` and `operator_*`. The MCP server and the eval agent use the same definitions and the same response text. No tool approves, denies or clears the stop.
+`tools.py` defines thirteen tools in three groups: `mhs_*` (what MHS would give an agent), `app_*` and `operator_*`. `mhs_check` and `app_check` run the same checks and gates as the matching invoke without acting (PROPOSAL 9). The MCP server and the eval agent use the same definitions and the same response text. No tool approves, denies or clears the stop.
 
 ## Simulation
 

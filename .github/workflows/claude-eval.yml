@@ -10,8 +10,15 @@ on:
       trials:
         description: "Trials per scenario"
         default: "3"
+      scope:
+        description: "Which scenarios"
+        type: choice
+        options:
+          - "all 23 scenarios"
+          - "only the scenarios listed below"
+        default: "all 23 scenarios"
       scenario:
-        description: "Scenarios to run, comma-separated (blank = all 23)"
+        description: "Scenario list, comma-separated (used only when scope says so)"
         default: ""
       ablation:
         description: "Also run Claude with guardrails off"
@@ -26,7 +33,7 @@ permissions:
 
 jobs:
   eval:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # pinned for reproducible published runs
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
@@ -49,13 +56,20 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MODEL: ${{ inputs.model }}
           TRIALS: ${{ inputs.trials }}
+          SCOPE: ${{ inputs.scope }}
           SCENARIO: ${{ inputs.scenario }}
           ABLATION: ${{ inputs.ablation }}
           WORKERS: ${{ inputs.workers }}
         run: |
           set -o pipefail
           args=(--agents claude --model "$MODEL" --trials "$TRIALS" --workers "$WORKERS" --out "evals/claude" -v)
-          if [ -n "$SCENARIO" ]; then args+=(--scenario "$SCENARIO"); fi
+          # A leftover list must not narrow a run silently: the list is used only when scope asks for it
+          if [ "$SCOPE" = "only the scenarios listed below" ]; then
+            if [ -z "$SCENARIO" ]; then echo "::error title=claude-eval::Scope is 'only the scenarios listed below' but the list is empty."; exit 2; fi
+            args+=(--scenario "$SCENARIO")
+          elif [ -n "$SCENARIO" ]; then
+            echo "::warning title=claude-eval::Scope is all 23 scenarios; ignoring the scenario list: $SCENARIO"
+          fi
           if [ "$ABLATION" != "true" ]; then args+=(--no-ablation); fi
           status=0
           mhs-bridge eval "${args[@]}" 2>&1 | tee evals/claude-run.log || status=$?

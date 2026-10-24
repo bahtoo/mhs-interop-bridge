@@ -17,7 +17,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_viscous_first_time",
@@ -37,7 +38,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_saturation_rerun",
@@ -57,7 +59,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_volume_split",
@@ -77,7 +80,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_reader_offline",
@@ -97,7 +101,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_emergency_stop",
@@ -117,7 +122,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_baseline",
@@ -137,7 +143,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_line_noise",
@@ -157,7 +164,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_link_failure",
@@ -177,7 +185,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_qc_failure",
@@ -197,7 +206,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_foam_specimen",
@@ -217,7 +227,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_critical_ack",
@@ -237,7 +248,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_critical_denied",
@@ -257,7 +269,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "hema_baseline",
@@ -277,7 +290,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "hema_unit_drift",
@@ -297,7 +311,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "hema_clot",
@@ -317,7 +332,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_to_result_astm",
@@ -337,7 +353,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_to_result_hl7",
@@ -357,7 +374,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_unroutable",
@@ -377,7 +395,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_patient_mismatch",
@@ -397,7 +416,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "vitals_chart",
@@ -417,7 +437,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "vitals_artefact",
@@ -437,7 +458,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "vitals_unassociated",
@@ -457,7 +479,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_foam_recovery",
@@ -477,7 +500,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_viscous_first_time",
@@ -497,7 +521,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_saturation_rerun",
@@ -517,7 +542,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_volume_split",
@@ -537,7 +563,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_reader_offline",
@@ -557,7 +584,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_emergency_stop",
@@ -577,7 +605,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_baseline",
@@ -597,7 +626,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_line_noise",
@@ -617,7 +647,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_link_failure",
@@ -637,7 +668,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_qc_failure",
@@ -657,7 +689,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_foam_specimen",
@@ -677,7 +710,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_critical_ack",
@@ -697,7 +731,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_critical_denied",
@@ -717,7 +752,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "hema_baseline",
@@ -737,7 +773,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "hema_unit_drift",
@@ -757,7 +794,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "hema_clot",
@@ -777,7 +815,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_to_result_astm",
@@ -797,7 +836,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_to_result_hl7",
@@ -817,7 +857,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_unroutable",
@@ -837,7 +878,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_patient_mismatch",
@@ -857,7 +899,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "vitals_chart",
@@ -877,7 +920,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "vitals_artefact",
@@ -897,7 +941,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "vitals_unassociated",
@@ -917,7 +962,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_foam_recovery",
@@ -942,7 +988,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_viscous_first_time",
@@ -967,7 +1014,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_saturation_rerun",
@@ -989,7 +1037,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_volume_split",
@@ -1011,7 +1060,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_reader_offline",
@@ -1031,7 +1081,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "lab_emergency_stop",
@@ -1054,7 +1105,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_baseline",
@@ -1077,7 +1129,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_line_noise",
@@ -1100,7 +1153,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_link_failure",
@@ -1120,7 +1174,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_qc_failure",
@@ -1143,7 +1198,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_foam_specimen",
@@ -1168,7 +1224,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_critical_ack",
@@ -1192,7 +1249,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "clin_critical_denied",
@@ -1216,7 +1274,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "hema_baseline",
@@ -1240,7 +1299,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "hema_unit_drift",
@@ -1265,7 +1325,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "hema_clot",
@@ -1292,7 +1353,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_to_result_astm",
@@ -1315,7 +1377,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_to_result_hl7",
@@ -1339,7 +1402,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_unroutable",
@@ -1361,7 +1425,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "order_patient_mismatch",
@@ -1386,7 +1451,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "vitals_chart",
@@ -1406,7 +1472,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "vitals_artefact",
@@ -1428,7 +1495,8 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  },
  {
   "scenario": "vitals_unassociated",
@@ -1455,6 +1523,7 @@
   "trial": 0,
   "tool_errors": 0,
   "turns": 0,
-  "usage": {}
+  "usage": {},
+  "checks": 0
  }
 ]

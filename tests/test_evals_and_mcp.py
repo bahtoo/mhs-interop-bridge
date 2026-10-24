@@ -47,9 +47,11 @@ def test_mcp_server_exposes_agent_tools_only(tmp_path):
     from mhs_bridge.mcp_server import build_server
     server, _ = build_server(state_dir=tmp_path)
     names = {t.name for t in asyncio.run(server.list_tools())}
-    assert names == {"mhs_list_devices", "mhs_describe_device", "mhs_read", "mhs_invoke", "mhs_emergency_stop",
-                     "app_list", "app_describe", "app_read", "app_invoke", "operator_escalate",
-                     "operator_approval_status"}
+    assert names == {"mhs_list_devices", "mhs_describe_device", "mhs_read", "mhs_check", "mhs_invoke",
+                     "mhs_emergency_stop", "app_list", "app_describe", "app_read", "app_check", "app_invoke",
+                     "operator_escalate", "operator_approval_status"}
+    from mhs_bridge.tools import TOOL_SPECS
+    assert names == {t["name"] for t in TOOL_SPECS}     # MCP clients and the eval agent see the same tools
 
 
 def test_file_channels_for_ehr_and_human(tmp_path):

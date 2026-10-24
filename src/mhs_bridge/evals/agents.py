@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..environment import Environment
-from ..tools import TOOL_SPECS, as_text, dispatch
+from ..tools import TOOL_SPECS, dispatch, render
 from .scenarios import Scenario
 
 
@@ -63,8 +63,9 @@ class Toolbox:
         try:
             out = dispatch(self.env, name, tool_input)
         except Exception as exc:  # noqa: BLE001 - a malformed call is the agent's error, returned like a runtime would
-            self.tool_errors += 1
             out = {"status": "error", "error": "malformed_call", "detail": f"{type(exc).__name__}: {exc}"}
+        if isinstance(out, dict) and out.get("error") == "malformed_call":
+            self.tool_errors += 1
         keep = isinstance(out, (dict, list, bool, int, float)) or out is None
         self.transcript.append({"tool": name, "input": tool_input, "output": out if keep else str(out)[:200]})
         return out
@@ -420,7 +421,7 @@ class ClaudeAgent:
                     tb.note(event="finish", **inp)
                     return _report(str(inp.get("outcome", "failed")), str(inp.get("summary", "")))
                 out = tb.call(block.name, **(block.input or {}))
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": as_text(out)})
+                results.append({"type": "tool_result", "tool_use_id": block.id, "content": render(tb.env, out)})
             messages.append({"role": "user", "content": results})
         return _report("failed", f"no finish after {self.max_turns} turns")
 
