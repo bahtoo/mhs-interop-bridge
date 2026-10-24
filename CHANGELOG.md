@@ -2,6 +2,15 @@
 
 Versions follow semantic versioning.
 
+## [Unreleased]
+
+### Fixed
+- The simulated plate reader's CSV export read back with a blank row after every line on Windows (`\r\r\n` line endings), which broke the file-drop driver, the lab record and three research scenarios. Six tests failed on Windows; all 67 now pass. Scripted results are unchanged.
+
+### Added
+- CI runs the tests and the eval reproducibility check on `windows-latest` (Python 3.12) as well as Ubuntu.
+- README: Windows setup, MCP state and `--as` notes, and a documentation index.
+
 ## [0.3.2] - 2026-10-21
 
 Provenance and CI housekeeping before the final Sonnet and Haiku runs. No scoring change.

@@ -148,19 +148,24 @@ It is optional, separate from the research-lab path, and documented in [docs/cli
 
 ## Quickstart
 
+Requires Python 3.10 or later. The only runtime dependency is PyYAML; `mcp` and `claude` are optional extras.
+
 ```bash
 git clone https://github.com/bahtoo/mhs-interop-bridge && cd mhs-interop-bridge
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev,mcp]"
 
 pytest -q                      # 67 tests
 mhs-bridge devices             # discovery
 mhs-bridge describe lh-01      # the reference file an agent reads
+mhs-bridge scenarios           # the 23 eval scenarios, one line each
 mhs-bridge demo research       # foam recovery, saturation and rerun
 mhs-bridge demo clinical       # FHIR order to result, wrong patient, critical value
 mhs-bridge demo bedside        # nurse-validated vitals, artefact held
-mhs-bridge eval --out evals    # all scenarios
+mhs-bridge eval --out evals    # all scenarios; reproduces evals/results.md
 ```
+
+Useful `eval` options: `--scenario <name>` (repeatable or comma-separated), `--agents naive,reference,claude`, `--no-ablation`, `--trials`, `--workers`, `--transcripts`, `-v`.
 
 As an MCP server, with the human channel beside it:
 
@@ -170,6 +175,23 @@ mhs-bridge approvals                          # what agents have asked a human f
 mhs-bridge approve apr-0001 --as your-name    # or deny; clear-estop --as your-name
 mhs-bridge submit-order examples/service_request_cbc.json   # EHR side of the clinical bridge
 ```
+
+For other MCP clients, [examples/mcp_config.json](examples/mcp_config.json) has the same server as an `mcpServers` entry. The server and the human-channel commands share state through `.mhs_state/` (change it with `--state-dir`), so run them from the same directory. Every human decision needs `--as <name>`, because decisions are attributed to a named person.
+
+## Documentation
+
+| Read | For |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | The boundary between MHS, drivers and applications |
+| [docs/safety.md](docs/safety.md) | The layered safety model: who owns which rule, and why each is on the write path |
+| [docs/evals.md](docs/evals.md) | What is measured, the invariants, the agents and how to run Claude |
+| [docs/clinical-bridge.md](docs/clinical-bridge.md) | The optional FHIR, ASTM and HL7 clinical loop |
+| [docs/proposals.md](docs/proposals.md) | Every **PROPOSAL** offered back to MHS |
+| [docs/cookbooks/sila2-instrument.md](docs/cookbooks/sila2-instrument.md) | Bring a SiLA 2 instrument to MHS |
+| [docs/cookbooks/file-drop-instrument.md](docs/cookbooks/file-drop-instrument.md) | Wrap an instrument that has no API |
+| [docs/cookbooks/clinical-analyzer.md](docs/cookbooks/clinical-analyzer.md) | Wrap an ASTM or HL7 analyzer |
+| [docs/cookbooks/physical-safety-eval.md](docs/cookbooks/physical-safety-eval.md) | Write a physical-world eval |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 
 ## Repository layout
 
@@ -185,9 +207,10 @@ src/mhs_bridge/
   evals/             scenarios, agents, invariants, harness
   tools.py           the agent tool surface (shared by MCP and evals)
   mcp_server.py, cli.py
-docs/
-  architecture.md, evals.md, safety.md, proposals.md, clinical-bridge.md
-  cookbooks/         sila2-instrument, file-drop-instrument, clinical-analyzer, physical-safety-eval
+docs/                see Documentation above
+evals/               checked-in scripted results (results.md, results.json)
+examples/            MCP client config and FHIR ServiceRequests for submit-order
+tests/
 ```
 
 ## Roadmap
