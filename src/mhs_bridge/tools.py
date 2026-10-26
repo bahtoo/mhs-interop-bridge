@@ -12,8 +12,13 @@ why not?" without acting, so an agent never has to test a safety control by
 triggering it.
 * ``operator_*`` the human channel, agent side only: escalate, check an approval.
 
-Deliberately absent: approve, deny, clear the emergency stop. Those exist only on
-the human side of the operator channel.
+Deliberately absent: approve, reject, revise, clear the emergency stop. Those exist
+only on the human side of the operator channel.
+
+Every clinical message (order download, EHR release, ward Task, critical callback,
+vital signs, data resolution) is drafted for a named human's review, and in copilot
+mode so is every device invoke. A drafted call returns ``needs_approval`` with a
+``request_id``; the agent polls ``operator_approval_status``.
 """
 
 from __future__ import annotations
@@ -29,6 +34,8 @@ def _obj(props: dict, required: list[str]) -> dict:
 
 
 S = {"type": "string"}
+RATIONALE = {"type": "string", "description": "Optional: why, in a sentence. Shown to the human who reviews the "
+             "draft, next to what will be sent."}
 
 TOOL_SPECS: list[dict] = [
     {"name": "mhs_list_devices", "description": "Discover every device on MHS: type, risk class, interface, online.",
@@ -39,8 +46,10 @@ TOOL_SPECS: list[dict] = [
     {"name": "mhs_read", "description": "Read one state from a device. Side-effect free.",
      "input_schema": _obj({"device_id": S, "state": S}, ["device_id", "state"])},
     {"name": "mhs_invoke", "description": "Invoke a procedure on a device. Checked against the manifest, the risk class "
-     "and the driver's interlocks. Returns ok, blocked (rule, reason, hint) or error (defined error, hint).",
-     "input_schema": _obj({"device_id": S, "procedure": S, "args": {"type": "object"}}, ["device_id", "procedure", "args"])},
+     "and the driver's interlocks. Returns ok, blocked (rule, reason, hint) or error (defined error, hint). In copilot "
+     "mode it returns needs_approval (request_id) instead: a human reviews the call before it runs.",
+     "input_schema": _obj({"device_id": S, "procedure": S, "args": {"type": "object"}, "rationale": RATIONALE},
+                          ["device_id", "procedure", "args"])},
     {"name": "mhs_check", "description": "Would this invoke be allowed, and if not, why? Runs the same checks as "
      "mhs_invoke (risk class, emergency stop, limits, reachability, interlocks) without doing anything. Use it "
      "instead of trying an action to find out whether a safety control is active.",
@@ -54,14 +63,18 @@ TOOL_SPECS: list[dict] = [
     {"name": "app_read", "description": "Read one state from an application.",
      "input_schema": _obj({"app_id": S, "state": S}, ["app_id", "state"])},
     {"name": "app_invoke", "description": "Invoke an application procedure. Returns ok, blocked, needs_approval "
-     "(request_id) or error.",
-     "input_schema": _obj({"app_id": S, "procedure": S, "args": {"type": "object"}}, ["app_id", "procedure", "args"])},
+     "(request_id) or error. Every clinical bridge procedure is drafted for a named human's review: nothing is sent "
+     "until they approve, and they may reject or revise it.",
+     "input_schema": _obj({"app_id": S, "procedure": S, "args": {"type": "object"}, "rationale": RATIONALE},
+                          ["app_id", "procedure", "args"])},
     {"name": "app_check", "description": "Would this application procedure be allowed, and if not, why? Runs the "
      "same gates as app_invoke, and says whether it would need a human's approval, without doing anything.",
      "input_schema": _obj({"app_id": S, "procedure": S, "args": {"type": "object"}}, ["app_id", "procedure", "args"])},
     {"name": "operator_escalate", "description": "Escalate to a human operator. Stopping safely and escalating is a "
      "successful outcome when a task cannot be done safely.", "input_schema": _obj({"summary": S}, ["summary"])},
-    {"name": "operator_approval_status", "description": "Status of an approval request: pending, approved, denied.",
+    {"name": "operator_approval_status", "description": "Status of a drafted request: PENDING_REVIEW, EXECUTED (approved "
+     "and done, with its result), EXECUTION_BLOCKED (approved, but a gate or the content changed, so nothing was "
+     "sent), REJECTED, or SUPERSEDED (a human revised it: follow superseded_by).",
      "input_schema": _obj({"request_id": S}, ["request_id"])},
 ]
 
@@ -83,9 +96,16 @@ def dispatch(env: Environment, name: str, i: dict, actor: str = "agent") -> Any:
     if name == "mhs_read":
         return rt.read(i["device_id"], i["state"], actor=actor)
     if name == "mhs_invoke":
+        if env.mode == "copilot":
+            return env.devices.invoke(i["device_id"], i["procedure"], i.get("args") or {}, actor=actor,
+                                      rationale=i.get("rationale", ""))
         return rt.invoke(i["device_id"], i["procedure"], i.get("args") or {}, actor=actor)
     if name == "mhs_check":
-        return rt.preview(i["device_id"], i["procedure"], i.get("args") or {}, actor=actor)
+        out = rt.preview(i["device_id"], i["procedure"], i.get("args") or {}, actor=actor)
+        if env.mode == "copilot" and out["allowed"]:
+            out.update(needs_approval=True, note=(out.get("note", "") + "; " if out.get("note") else "")
+                       + "copilot mode: allowed as a draft for a human's review")
+        return out
     if name == "mhs_emergency_stop":
         return rt.engage_estop(actor, i["reason"])
     if name == "app_list":
@@ -101,7 +121,7 @@ def dispatch(env: Environment, name: str, i: dict, actor: str = "agent") -> Any:
         except KeyError:
             return {"error": f"unknown state {i['state']!r} on {app.app_id}"}
     if name == "app_invoke":
-        return app.invoke(i["procedure"], i.get("args") or {}, actor=actor)
+        return app.invoke(i["procedure"], i.get("args") or {}, actor=actor, rationale=i.get("rationale", ""))
     if name == "app_check":
         return _app_preview(env, app, i["procedure"], i.get("args") or {}, actor)
     if name == "operator_escalate":
@@ -124,7 +144,7 @@ def _app_preview(env: Environment, app: Any, procedure: str, args: dict, actor: 
         out.update(rule=d.rule, reason=d.reason, hint=d.hint)
     if needs_human:
         out["needs_approval"] = True
-        out["note"] = "allowed as a request: a named human decides through the operator channel"
+        out["note"] = "allowed as a draft: a named human approves, rejects or revises it before anything is sent"
     return out
 
 

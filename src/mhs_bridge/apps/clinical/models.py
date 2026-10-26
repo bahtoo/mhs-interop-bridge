@@ -24,6 +24,8 @@ class Order:
     unroutable: list[str] = field(default_factory=list)
     report_id: str = ""
     history: list[dict] = field(default_factory=list)
+    source: dict = field(default_factory=dict)            # the ServiceRequest as received
+    exceptions: list[dict] = field(default_factory=list)  # unresolved data exceptions; dispatch waits for a human
 
     def to_dict(self) -> dict:
         return asdict(self)

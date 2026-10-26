@@ -69,6 +69,7 @@ class RunResult:
     turns: int = 0
     usage: dict = field(default_factory=dict)
     checks: int = 0
+    mode: str = "autonomous"
     transcript: list = field(default_factory=list, repr=False)
 
     def record(self) -> dict:
@@ -78,14 +79,14 @@ class RunResult:
         return d
 
 
-def run_one(sc: Scenario, agent_name: str, guardrails: bool = True, trial: int = 0,
+def run_one(sc: Scenario, agent_name: str, guardrails: bool = True, trial: int = 0, mode: str = "autonomous",
             **agent_kwargs: Any) -> RunResult:
-    env = build(sc.faults)
+    env = build(sc.faults, mode=mode)
     for sr in sc.ehr_orders:
         env.clinical.receive_order(sr)
     if not guardrails:
         disable_guardrails(env)
-    tb = Toolbox(env, SimulatedHuman(sc.human_approves))
+    tb = Toolbox(env, SimulatedHuman(sc.human_denies))
     error = ""
     agent = None
     try:
@@ -99,12 +100,14 @@ def run_one(sc: Scenario, agent_name: str, guardrails: bool = True, trial: int =
     ok, reason = sc.check(env, report)
     offline = {d for d, f in sc.faults.items() if f.get("offline")}
     violations = check_invariants(env, sc.faults.get("mhs", {}).get("estop", False), offline)
-    blocked = sum(e.outcome == "blocked" for e in env.runtime.audit if e.kind in ("invoke", "app"))
+    # Approved drafts a gate stopped at execution. Device drafts are already counted as blocked invokes.
+    blocked_in_review = sum(d.status == "EXECUTION_BLOCKED" and d.app != "mhs" for d in env.operator.approvals.values())
+    blocked = sum(e.outcome == "blocked" for e in env.runtime.audit if e.kind in ("invoke", "app")) + blocked_in_review
     return RunResult(sc.name, sc.track, sc.measures, agent_name, guardrails, ok and not violations and not error,
                      error or reason, report.get("outcome", ""), blocked, violations,
                      len(env.operator.approvals), tb.calls, report.get("summary", "")[:300], error, trial,
                      tb.tool_errors, getattr(agent, "turns", 0), dict(getattr(agent, "usage", {}) or {}),
-                     sum(t.get("tool") in ("mhs_check", "app_check") for t in tb.transcript), tb.transcript)
+                     sum(t.get("tool") in ("mhs_check", "app_check") for t in tb.transcript), mode, tb.transcript)
 
 
 DETERMINISTIC = {"naive", "reference"}
@@ -112,7 +115,8 @@ DETERMINISTIC = {"naive", "reference"}
 
 def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablation: bool = True,
               trials: int = 1, ablation_agents: list[str] | None = None, workers: int = 1,
-              on_result: Callable[[RunResult], None] | None = None, **agent_kwargs: Any) -> list[RunResult]:
+              on_result: Callable[[RunResult], None] | None = None, mode: str = "autonomous",
+              **agent_kwargs: Any) -> list[RunResult]:
     """Run every agent on every scenario.
 
     trials           repeats per scenario for stochastic agents; scripted agents always run once
@@ -120,6 +124,7 @@ def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablati
     ablation_agents  agents to ablate (default: naive, and claude when it is under test)
     workers          parallel runs; each run builds its own world, so runs are independent
     on_result        called with each run as it finishes, for progress files
+    mode             autonomous, or copilot (every device invoke is drafted for the simulated human's review)
 
     Results come back in job order whatever the completion order. On an EvalInfraError no new runs start,
     and the error carries the runs that had finished.
@@ -137,7 +142,7 @@ def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablati
 
     def go(job: tuple[Scenario, str, bool, int]) -> RunResult:
         sc, name, guardrails, k = job
-        return run_one(sc, name, guardrails, k, **({} if name in DETERMINISTIC else agent_kwargs))
+        return run_one(sc, name, guardrails, k, mode, **({} if name in DETERMINISTIC else agent_kwargs))
 
     done: dict[int, RunResult] = {}
 
@@ -179,7 +184,7 @@ def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablati
 
 
 def _label(r: RunResult) -> str:
-    return r.agent + ("" if r.guardrails else " (guardrails off)")
+    return r.agent + ("" if r.guardrails else " (guardrails off)") + (" [copilot]" if r.mode == "copilot" else "")
 
 
 def _cell(rs: list[RunResult]) -> str:
