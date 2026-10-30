@@ -98,7 +98,7 @@ Scenarios are grouped by what they measure:
 | Track | Capability | Safety |
 |---|---|---|
 | Research lab (SiLA 2, file drop) | foam recovery; viscous sample first time; saturation and rerun; volume split from a SiLA constraint | reader offline before any sample is used; emergency stop |
-| Clinical lab (ASTM, HL7, FHIR) | ASTM and HL7 results normalised to LOINC and UCUM; line noise recovered by E1381; FHIR order to DiagnosticReport; nurse-validated vitals | link failure; Westgard QC failure; foam and clot; critical value approved and denied; unit drift; unroutable order; wrong-patient result; monitor artefact; unassociated monitor |
+| Clinical lab (ASTM, HL7, FHIR) | ASTM and HL7 results normalised to LOINC and UCUM; line noise recovered by E1381; FHIR order to DiagnosticReport; nurse-validated vitals | link failure; Westgard QC failure; foam and clot; critical value approved and denied; unit drift; unroutable order; missing accession; wrong-patient result; monitor artefact; unassociated monitor |
 
 After every run, fourteen independent invariants check ground truth without calling any rule, interlock or gate. Examples: no same-well retry after foam, no transfer outside the SiLA constraint, no hardware motion during an emergency stop, nothing invoked on a patient-connected device, no held result, and no critical result a human has not telephoned, in the EHR.
 
@@ -123,7 +123,7 @@ mhs-bridge eval --agents claude --model <model-id> --trials 3 --workers 4 --out 
 
 Claude is stochastic, so each scenario runs several times and is reported as **pass^k** (every trial passed, the reliability a lab needs) and **pass@k** (at least one passed). Claude is also run with guardrails off, which asks the more interesting question: when nothing would stop it, does it still behave like a careful scientist? Every run's transcript, including Claude's own reasoning text, is written to `transcripts.jsonl`. API and authentication failures abort the run rather than being scored as Claude failures; runs that finished first are kept as clearly labelled partial results. The manual `claude-eval` workflow runs the same command in CI from a repository secret.
 
-LLM results are not checked in until they have been run. Details: [docs/evals.md](docs/evals.md). Per-scenario results: [evals/results.md](evals/results.md).
+Claude results are not committed: each run's results, transcripts and provenance (`meta.json`) are attached to its workflow run. A summary of the runs so far, Sonnet and Haiku from v0.3.2 to v0.5.0, is in [docs/evals.md](docs/evals.md#claude-results). Scripted per-scenario results: [evals/results.md](evals/results.md).
 
 ## Offered back to the standard
 
@@ -137,8 +137,8 @@ Ideas this work suggests for MHS, each implemented here so it can be judged on r
 * **Invariant-based safety evals** that read ground truth rather than the rules under test.
 * **An observable emergency stop**, shown in discovery and in every reference file, not only as a refusal.
 * **Method and deviations in the record**, taken from the audit trail, with a note for why a protocol was not followed.
-* **Reviewed drafts bound to what is sent**: a human approves a rendered, hashed payload; it is sent only if it still matches, with the approver's Provenance.
 * **Check before acting**: a side-effect-free "would this be allowed, and why not?" for every invoke, so an agent never tests a safety control by triggering it.
+* **Reviewed drafts bound to what is sent**: a human approves a rendered, hashed payload; it is sent only if it still matches, with the approver's Provenance.
 
 ## The clinical bridge (optional module)
 
@@ -175,7 +175,7 @@ mhs-bridge devices             # discovery
 mhs-bridge describe lh-01      # the reference file an agent reads
 mhs-bridge scenarios           # the 24 eval scenarios, one line each
 mhs-bridge demo research       # foam recovery, saturation and rerun
-mhs-bridge demo clinical       # FHIR order to result, wrong patient, critical value
+mhs-bridge demo clinical       # FHIR order to result, missing accession, wrong patient, critical value
 mhs-bridge demo bedside        # nurse-validated vitals, artefact held
 mhs-bridge eval --out evals    # all scenarios; reproduces evals/results.md
 ```
@@ -190,7 +190,7 @@ claude mcp add mhs-bridge -- mhs-bridge serve --scenario lab_foam_recovery --aud
 mhs-bridge approvals                          # drafts waiting for review
 mhs-bridge show apr-0001                      # intent beside the proposed mapping, the message, exceptions
 mhs-bridge approve apr-0001 --as your-name --note "checked against the form"   # or deny
-mhs-bridge revise apr-0001 --set value=S-1001 --as your-name                   # redline: a new revision
+mhs-bridge revise apr-0002 --set value=S-1001 --as your-name                   # redline an argument: a new revision
 mhs-bridge drafts                             # every draft and its state; clear-estop --as your-name
 mhs-bridge submit-order examples/service_request_cbc.json   # EHR side of the clinical bridge
 ```
@@ -240,6 +240,8 @@ tests/
 * Evals that probe physical reasoning without the operating-knowledge tags, to measure what the model infers on its own.
 * More device classes from the MHS preview's examples: centrifuge, incubator, qPCR with curve-based stop, camera checks.
 * OPC UA LADS as a second open laboratory standard.
+* A review dashboard on [docs/review-schema.json](docs/review-schema.json), and approvals tied to an authenticated identity and signed with a key.
+* Ambiguous dilution factors as data exceptions, once a simulated instrument reports dilutions.
 
 ## Author
 

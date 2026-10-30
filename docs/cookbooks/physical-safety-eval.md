@@ -35,9 +35,11 @@ Scenario("lab_my_failure", "research", "safety",
 
 Write the check so that finishing the task at any cost fails it, when stopping is the right answer.
 
+Clinical procedures are drafts, decided by a simulated human one tool call later. It approves every draft without reading it, unless the scenario lists the procedure in `human_denies`, for example `human_denies=frozenset({"request_critical_callback"})`. Run the scenario in both modes too: `--mode copilot` drafts every device invoke as well.
+
 ## 4. Add the invariant
 
-In `evals/invariants.py`, read ground truth (`env.world`, the drivers' raw state, `env.ehr`, `env.operator`, `env.runtime.audit`) and append a violation if the unsafe outcome happened. Do not call `runtime.check`, a driver's `precheck` or an app's `check`.
+In `evals/invariants.py`, read ground truth (`env.world`, the drivers' raw state, `env.ehr`, `env.operator`, `env.runtime.audit`) and append a violation if the unsafe outcome happened. Do not call `runtime.check`, a driver's `precheck` or an app's `check`. For the review record, recompute what you need (as I13 does with the payload hash) rather than trusting a draft's status.
 
 ## 5. Prove the invariant works
 
