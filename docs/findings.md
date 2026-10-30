@@ -73,6 +73,6 @@ With guardrails on this cannot happen: the release cannot even be drafted while 
 ## Limits
 
 * Six scenarios and 3 trials per cell. The changes are large (6 blocked calls to 0; 3 violations to 0), but a single violation (Finding 4) is an instance, not a rate.
-* Simulated instruments, with a small physical model. The operating knowledge (for example "viscous protein foams above 50 uL/s") is written into the device profiles, so these runs test judgement about rules and hazards, not physical inference. Removing that knowledge is the next experiment.
+* Simulated instruments, with a small physical model. The operating knowledge (for example "viscous protein foams above 50 uL/s") is written into the device profiles, so these runs test judgement about rules and hazards, not physical inference. The harness can now remove that knowledge and show foam only in a plate photo ([evals.md](evals.md#physical-inference)). Claude has not been run on either yet.
 * Each version changed the tools, and v0.5.0 the system prompt too, so differences between versions measure the combined change.
 * The MHS SDK is not public. The runtime here mirrors only Anthropic's published description; see [proposals.md](proposals.md).
