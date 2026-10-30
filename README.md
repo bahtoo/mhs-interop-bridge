@@ -12,7 +12,25 @@ This repository works on that part, in three pieces:
 
 Around all three, **a human stays in the loop**. Every message the bridge would send to an analyzer, the EHR or a ward is first a draft: rendered, hashed, and held in `PENDING_REVIEW` until a named person approves, rejects or revises it. In copilot mode every device invoke is reviewed the same way.
 
+**In short:**
+
+* **The foam case from the MHS preview, handled.** An agent that retries in the same well after foam is refused by the liquid handler's driver. The reference agent corrects the flow rate in a clean row instead.
+* **Safety measured against ground truth.** With every automated rule switched off, fourteen invariants find 61 violations across 24 scenarios; with the rules on, they find none.
+* **Claude with nothing stopping it.** Sonnet read an emergency stop in discovery and in three reference files, then ran the dilution anyway. Haiku tested a safety gate by triggering it. Two tool changes took both to zero violations, and a third showed where human review alone falls short: [docs/findings.md](docs/findings.md).
+
 > **Status.** v0.5.0. Independent work, not affiliated with or endorsed by Anthropic or any instrument vendor. The MHS SDK is in a waitlisted research preview, so `mhs_shim/` is a deliberately small stand-in that mirrors only what Anthropic has published. It is meant to be deleted when the real SDK can be imported. Anything beyond the public description is marked **PROPOSAL** and collected in [docs/proposals.md](docs/proposals.md). Instruments are simulated, vendor names are fictional, and only open, public standards are used. Not for clinical use.
+
+## How this maps to MHS
+
+| Anthropic's [MHS announcement](https://www.anthropic.com/news/model-hardware-standard-research-preview) | Here |
+|---|---|
+| Asks partners to help build safety evaluations and best practices | 24 fault-injection scenarios, 14 ground-truth invariants, a guardrails-off ablation, and [findings](docs/findings.md) from Claude transcripts across four versions |
+| At Genentech, Claude had to be guided to see foam as a physical failure, not a software bug | Foam reproduced in simulation; error hints that say "physical"; a driver interlock that quarantines the well ([sila2-instrument](docs/cookbooks/sila2-instrument.md)) |
+| MHS does not yet support hardware without a programming interface | A file-drop driver for instruments that only exchange files through vendor software ([file-drop-instrument](docs/cookbooks/file-drop-instrument.md)) |
+| Physical reasoning still requires expert oversight | Copilot mode: every device invoke is a draft a named person approves, bound by hash to what runs ([safety](docs/safety.md#5-review-queue)) |
+| Devices describe their own safety limits | Limits imported from SiLA 2 Feature Definitions, enforced by the runtime, plus a risk class that makes patient-connected devices read-only |
+
+What this does not cover yet: Claude reads the physical world here through text only, and the operating knowledge is written into device profiles. The roadmap's next two items test physical inference without that knowledge, and visual evidence.
 
 ## Where this sits
 
@@ -201,6 +219,7 @@ For other MCP clients, [examples/mcp_config.json](examples/mcp_config.json) has 
 
 | Read | For |
 |---|---|
+| [docs/findings.md](docs/findings.md) | What Claude does when nothing stops it: four findings from the transcripts |
 | [docs/architecture.md](docs/architecture.md) | The boundary between MHS, drivers and applications |
 | [docs/safety.md](docs/safety.md) | The layered safety model: who owns which rule, and why each is on the write path |
 | [docs/evals.md](docs/evals.md) | What is measured, the invariants, the agents and how to run Claude |
@@ -238,6 +257,7 @@ tests/
 * Talk to real SiLA 2 servers over gRPC through a SiLA 2 client library, using the same Feature Definitions.
 * SiLA 2 coverage: Structures, Custom data types, Metadata, Observable commands with intermediate responses.
 * Evals that probe physical reasoning without the operating-knowledge tags, to measure what the model infers on its own.
+* Visual evidence: a plate image in which foam is visible but no device error reports it.
 * More device classes from the MHS preview's examples: centrifuge, incubator, qPCR with curve-based stop, camera checks.
 * OPC UA LADS as a second open laboratory standard.
 * A review dashboard on [docs/review-schema.json](docs/review-schema.json), and approvals tied to an authenticated identity and signed with a key.
