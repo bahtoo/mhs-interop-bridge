@@ -70,6 +70,7 @@ class RunResult:
     usage: dict = field(default_factory=dict)
     checks: int = 0
     mode: str = "autonomous"
+    knowledge: str = "on"
     transcript: list = field(default_factory=list, repr=False)
 
     def record(self) -> dict:
@@ -80,8 +81,8 @@ class RunResult:
 
 
 def run_one(sc: Scenario, agent_name: str, guardrails: bool = True, trial: int = 0, mode: str = "autonomous",
-            **agent_kwargs: Any) -> RunResult:
-    env = build(sc.faults, mode=mode)
+            knowledge: str = "on", **agent_kwargs: Any) -> RunResult:
+    env = build(sc.faults, mode=mode, knowledge=knowledge)
     for sr in sc.ehr_orders:
         env.clinical.receive_order(sr)
     if not guardrails:
@@ -107,7 +108,8 @@ def run_one(sc: Scenario, agent_name: str, guardrails: bool = True, trial: int =
                      error or reason, report.get("outcome", ""), blocked, violations,
                      len(env.operator.approvals), tb.calls, report.get("summary", "")[:300], error, trial,
                      tb.tool_errors, getattr(agent, "turns", 0), dict(getattr(agent, "usage", {}) or {}),
-                     sum(t.get("tool") in ("mhs_check", "app_check") for t in tb.transcript), mode, tb.transcript)
+                     sum(t.get("tool") in ("mhs_check", "app_check") for t in tb.transcript), mode, knowledge,
+                     tb.transcript)
 
 
 DETERMINISTIC = {"naive", "reference"}
@@ -116,7 +118,7 @@ DETERMINISTIC = {"naive", "reference"}
 def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablation: bool = True,
               trials: int = 1, ablation_agents: list[str] | None = None, workers: int = 1,
               on_result: Callable[[RunResult], None] | None = None, mode: str = "autonomous",
-              **agent_kwargs: Any) -> list[RunResult]:
+              knowledge: str = "on", **agent_kwargs: Any) -> list[RunResult]:
     """Run every agent on every scenario.
 
     trials           repeats per scenario for stochastic agents; scripted agents always run once
@@ -125,6 +127,7 @@ def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablati
     workers          parallel runs; each run builds its own world, so runs are independent
     on_result        called with each run as it finishes, for progress files
     mode             autonomous, or copilot (every device invoke is drafted for the simulated human's review)
+    knowledge        on, or off (device profiles without operating knowledge; see environment.build)
 
     Results come back in job order whatever the completion order. On an EvalInfraError no new runs start,
     and the error carries the runs that had finished.
@@ -142,7 +145,7 @@ def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablati
 
     def go(job: tuple[Scenario, str, bool, int]) -> RunResult:
         sc, name, guardrails, k = job
-        return run_one(sc, name, guardrails, k, mode, **({} if name in DETERMINISTIC else agent_kwargs))
+        return run_one(sc, name, guardrails, k, mode, knowledge, **({} if name in DETERMINISTIC else agent_kwargs))
 
     done: dict[int, RunResult] = {}
 
@@ -184,7 +187,8 @@ def run_suite(agents: list[str], scenarios: list[Scenario] | None = None, ablati
 
 
 def _label(r: RunResult) -> str:
-    return r.agent + ("" if r.guardrails else " (guardrails off)") + (" [copilot]" if r.mode == "copilot" else "")
+    return (r.agent + ("" if r.guardrails else " (guardrails off)") + (" [copilot]" if r.mode == "copilot" else "")
+            + (" [no knowledge]" if r.knowledge == "off" else ""))
 
 
 def _cell(rs: list[RunResult]) -> str:

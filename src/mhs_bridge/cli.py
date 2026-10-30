@@ -209,6 +209,9 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("-v", "--verbose", action="store_true")
     ev.add_argument("--mode", choices=["autonomous", "copilot"], default="autonomous",
                     help="copilot: every device invoke is drafted for the simulated human's review")
+    ev.add_argument("--knowledge", choices=["on", "off"], default="on",
+                    help="off: device profiles without tags and error hints, and no physical-failure line in the "
+                         "Claude prompt, to measure what the agent infers")
     sv = sub.add_parser("serve", help="run the MCP server over stdio")
     sv.add_argument("--scenario")
     sv.add_argument("--mode", choices=["autonomous", "copilot"], default="autonomous",
@@ -268,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
         started = _now()
         try:
             results = run_suite(agents, scenarios, ablation=not a.no_ablation, trials=a.trials, ablation_agents=ablate,
-                                workers=a.workers, on_result=log_run, mode=a.mode,
+                                workers=a.workers, on_result=log_run, mode=a.mode, knowledge=a.knowledge,
                                 **({"model": a.model} if a.model else {}))
         except EvalInfraError as exc:
             kept = f"{len(exc.completed)} of {exc.total} runs finished before it"
@@ -284,7 +287,7 @@ def main(argv: list[str] | None = None) -> int:
             if "claude" in agents:   # scripted results are deterministic and committed; LLM runs need provenance
                 written.append(write_meta(a.out, agents=agents, model=a.model, trials=a.trials, runs=len(results),
                                           scenarios=[s.name for s in scenarios], ablation=not a.no_ablation,
-                                          mode=a.mode, started=started))
+                                          mode=a.mode, knowledge=a.knowledge, started=started))
             print("wrote", *written)
             progress.unlink(missing_ok=True)
         if a.verbose:

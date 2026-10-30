@@ -28,7 +28,7 @@ from typing import Any
 from .apps.operator import ApprovalEvent, verify_chain
 from .environment import Environment, build
 from .evals.scenarios import BY_NAME
-from .tools import dispatch, render
+from .tools import dispatch, image_caption, is_image, render
 
 INSTRUCTIONS = ("Laboratory instruments on the Model Hardware Standard (stand-in runtime), plus applications built on "
                 "it. Start with mhs_list_devices, read mhs_describe_device before operating a device, and treat "
@@ -118,10 +118,17 @@ def build_server(scenario: str | None = None, state_dir: str | Path = ".mhs_stat
     note = " Copilot mode: every device invoke is also drafted for review before it runs." if mode == "copilot" else ""
     server = _server_class()(name="mhs-interop-bridge", instructions=INSTRUCTIONS + note)
 
-    def call(name: str, **kw: Any) -> str:
+    def call(name: str, **kw: Any) -> Any:
         channel.sync()
         out = dispatch(env, name, kw)
         channel.sync()
+        if is_image(out):
+            try:
+                from mcp.server.fastmcp import Image
+                import base64
+                return [Image(data=base64.b64decode(out["data_base64"]), format="png"), image_caption(out)]
+            except ImportError:      # an SDK without Image: say what there is rather than send base64 as text
+                return image_caption(out) + "\n(image not shown: this MCP SDK cannot return images)"
         return render(env, out)
 
     @server.tool()
@@ -135,8 +142,8 @@ def build_server(scenario: str | None = None, state_dir: str | Path = ".mhs_stat
         return call("mhs_describe_device", device_id=device_id)
 
     @server.tool()
-    def mhs_read(device_id: str, state: str) -> str:
-        """Read one state from a device. Side-effect free."""
+    def mhs_read(device_id: str, state: str) -> Any:
+        """Read one state from a device. Side-effect free. Image states (a plate photo) come back as images."""
         return call("mhs_read", device_id=device_id, state=state)
 
     @server.tool()

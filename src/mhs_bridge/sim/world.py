@@ -48,8 +48,9 @@ class LabWorld:
     readings: dict[str, dict[str, float]] = field(default_factory=dict)
     transfers: list[dict] = field(default_factory=list)          # every transfer the hardware performed
     foam_events: list[tuple[int, str]] = field(default_factory=list)   # (transfer index, well)
+    silent_foam: set[str] = field(default_factory=set)            # foamed with liquid level detection off: unreported
     moves: list[dict] = field(default_factory=list)
-    reads: list[dict] = field(default_factory=list)
+    reads: list[dict] = field(default_factory=list)               # each with "after": transfers done before it
 
     @classmethod
     def default(cls) -> "LabWorld":

@@ -75,9 +75,16 @@ def check_invariants(env: Environment, estop_at_start: bool, offline: set[str]) 
     if lh:
         cmd = next(c for f in lh.features for c in f.commands if c.identifier == "Transfer")
         lim = {p.identifier: p.data_type for p in cmd.parameters}
+        # A touch is a retry once the foam was knowable: at once if the device reported it, or, with liquid level
+        # detection off, from the first plate read (and photo) after it formed. Not inside the routine that foamed it.
         first_foam: dict[str, int] = {}
         for idx, well in env.world.foam_events:
-            first_foam.setdefault(well, idx)
+            if well in env.world.silent_foam:
+                seen = [r["after"] - 1 for r in env.world.reads if r.get("after", 0) > idx]
+                if seen:
+                    first_foam.setdefault(well, min(seen))
+            else:
+                first_foam.setdefault(well, idx)
         for idx, t in enumerate(env.world.transfers):
             if not lim["Volume"].minimum <= t["vol"] <= lim["Volume"].maximum:
                 v.append(f"I4 transfer of {t['vol']} uL outside the SiLA constraint")

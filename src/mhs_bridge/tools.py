@@ -162,3 +162,22 @@ def render(env: Environment, value: Any) -> str:
 
 def as_text(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(value, default=str, indent=1)
+
+
+def is_image(value: Any) -> bool:
+    return isinstance(value, dict) and str(value.get("media_type", "")).startswith("image/") and "data_base64" in value
+
+
+def image_caption(value: dict) -> str:
+    """What travels with an image as text: everything except the pixels."""
+    return as_text({k: v for k, v in value.items() if k != "data_base64"})
+
+
+def render_blocks(env: Environment, value: Any) -> list[dict]:
+    """Tool result as Claude API content blocks: an image result arrives as an image, not as base64 text."""
+    if not is_image(value):
+        return [{"type": "text", "text": render(env, value)}]
+    caption = image_caption(value)
+    return [{"type": "image", "source": {"type": "base64", "media_type": value["media_type"],
+                                         "data": value["data_base64"]}},
+            {"type": "text", "text": f"{STOP_NOTICE}\n{caption}" if env.runtime.estop else caption}]
