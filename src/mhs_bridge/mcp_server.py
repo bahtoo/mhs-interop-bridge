@@ -21,6 +21,7 @@ What the server writes for the human side, in <state>/:
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from typing import Any
@@ -108,6 +109,19 @@ def _server_class():
         return FastMCP
 
 
+def _image_class():
+    try:
+        from mcp.server.mcpserver import Image      # MCP Python SDK 2.x
+        return Image
+    except ImportError:
+        pass
+    try:
+        from mcp.server.fastmcp import Image        # MCP Python SDK 1.x
+        return Image
+    except ImportError:
+        return None
+
+
 def build_server(scenario: str | None = None, state_dir: str | Path = ".mhs_state", audit_path: str | None = None,
                  mode: str = "autonomous"):
     sc = BY_NAME[scenario] if scenario else None
@@ -123,12 +137,10 @@ def build_server(scenario: str | None = None, state_dir: str | Path = ".mhs_stat
         out = dispatch(env, name, kw)
         channel.sync()
         if is_image(out):
-            try:
-                from mcp.server.fastmcp import Image
-                import base64
-                return [Image(data=base64.b64decode(out["data_base64"]), format="png"), image_caption(out)]
-            except ImportError:      # an SDK without Image: say what there is rather than send base64 as text
+            image = _image_class()
+            if image is None:        # an SDK without Image: say what there is rather than send base64 as text
                 return image_caption(out) + "\n(image not shown: this MCP SDK cannot return images)"
+            return [image(data=base64.b64decode(out["data_base64"]), format="png"), image_caption(out)]
         return render(env, out)
 
     @server.tool()

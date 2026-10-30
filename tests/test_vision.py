@@ -69,5 +69,5 @@ def test_mcp_returns_the_photo_as_image_content(tmp_path):
     server, env = build_server("lab_foam_visual_only", state_dir=tmp_path)
     _foam_then_read(env)
     out = asyncio.run(server.call_tool("mhs_read", {"device_id": "reader-01", "state": "last_image:P1"}))
-    blocks = out[0] if isinstance(out, tuple) else out
+    blocks = getattr(out, "content", None) or (out[0] if isinstance(out, tuple) else out)   # SDK 2.x or 1.x
     assert any(getattr(b, "type", "") == "image" for b in blocks)
