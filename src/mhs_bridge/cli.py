@@ -17,7 +17,7 @@ from .protocols.sila2 import parse_feature
 DEMOS = {"research": ["lab_foam_recovery", "lab_saturation_rerun"],
          "clinical": ["order_to_result_astm", "order_missing_accession", "order_patient_mismatch", "clin_critical_ack"],
          "bedside": ["vitals_chart", "vitals_artefact"],
-         "service": ["svc_probe_clog", "svc_reagent_lot"]}
+         "service": ["svc_probe_clog", "svc_reagent_lot", "svc_temp_drift", "svc_needs_part", "lab_daily_start"]}
 
 
 def _tail(t: dict) -> str:

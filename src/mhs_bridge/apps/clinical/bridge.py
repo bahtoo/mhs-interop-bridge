@@ -252,6 +252,10 @@ class ClinicalBridgeApp:
                                           f"({r['value']} {r['unit']}) and not acknowledged",
                                           "Call request_critical_callback; a human must make the call.")
                 dev, _ = self._index[r["result_id"]]
+                if self._instrument_suspect(args["specimen_id"]):
+                    return Decision.block("instrument_fault", f"{dev} logged an instrument error during the run of "
+                                          f"{args['specimen_id']}", "Results from a run during an instrument fault "
+                                          "are not valid. Fix the analyzer, then re-run the specimen.")
                 qc = self.qc_status(dev, r["vendor_raw"]["code"])
                 if qc.status not in ("pass", "warn"):
                     return Decision.block("qc_gate", f"QC for {r['vendor_raw']['code']} on {dev} is {qc.status} "

@@ -80,15 +80,38 @@ operations:
         - "Remove the sample probe (two screws) and pass the cleaning wire through it until it moves freely."
         - "Refit the probe, then run the probe-position check from the maintenance menu."
       minutes: 15
+    load_reagent_pack:
+      description: "Load a new reagent pack for every test whose pack on board is empty."
+      steps:
+        - "Take the new pack from the 2-8 C fridge; check its lot and expiry against the label."
+        - "Open the reagent compartment, remove the empty pack and load the new one until it clicks."
+        - "Close the compartment and let the analyzer read the pack barcode."
+      minutes: 5
+  spare_lots:                 # the next pack in the fridge, per test
+    GLU: "GLU-2614B"
+    K: "K-2617A"
+  schedule:
+    probe_wash: daily
+    cuvette_wash: weekly
+  reset_limit: 2              # remote resets of one hardware fault before it goes to field service
+  field_service:              # faults no remote action clears, and what the engineer brings
+    E-612: {part: "04-1180 photometer lamp assembly", try_reset: true}
+    E-310: {part: "02-0745 incubator heater controller board", try_reset: false}
   error_codes:
     E-217: "Aspiration pressure out of range at the sample probe."
+    E-310: "Incubator temperature out of range; results from runs during it are not valid."
     E-405: "Calibration failed."
+    E-612: "Photometer lamp failure. The analyzer stops; a reset may clear a transient fault."
+    R-120: "Reagent pack empty for a test in the run."
 
 # Natural-language tags. These become the agent-facing reference file, the same
 # idea MHS uses to capture tacit knowledge that is not visible in code.
 tags:
   - "E-217 on several specimens in a row, with short-sample flags, points to the sample probe, not to the specimens. Fix the probe before asking anyone for a new specimen."
   - "A new reagent lot needs a calibration on that lot before patient testing. Re-running QC does not fix a calibration."
+  - "An incubator temperature out of range invalidates every result from the runs during it, not only the latest one. Look back through the event log to the first E-310."
+  - "A hardware fault that comes back after one reset needs a field engineer and a part; more resets wear the analyzer and lose its logs."
+  - "Start of day: run the due maintenance and check the reagent packs before QC, and QC before patient specimens."
   - "Results flagged B mean foam or bubbles in the sample cup. This is a physical problem. Re-running the same cup will not fix it; the specimen must be re-spun or recollected."
   - "Results flagged SS mean short sample. Do not release; request a new aliquot."
   - "Patient results may only be released when the most recent QC run for that test passes Westgard rules."

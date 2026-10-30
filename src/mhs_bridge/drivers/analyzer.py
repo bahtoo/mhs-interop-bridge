@@ -14,8 +14,12 @@ the problem, and re-running it is the right thing to do.
 
 Operations: when the profile has an ``operations`` section, the analyzer also
 exposes what its vendor's remote service works with: sensors with their normal
-ranges, the event log, reagents on board, calibrations, and remote maintenance
-and calibration. Hands-on tasks are listed, never invocable: a person does them.
+ranges, the event log, reagents on board, calibrations, the maintenance
+schedule, and remote maintenance, calibration and reset. Hands-on tasks are
+listed, never invocable: a person does them.
+
+Two more interlocks: no patient specimen while the start-of-day maintenance is
+due, and no more remote resets of a hardware fault than the profile's limit.
 """
 
 from __future__ import annotations
@@ -85,13 +89,17 @@ class AnalyzerDriver:
     def _ops_states(self) -> list[State]:
         if not self.ops:
             return []
-        return [State("sensors", "object", "sensor readings with their normal ranges"),
+        return [State("mode", "object", "ready, or error with the vendor code that stopped the analyzer"),
+                State("sensors", "object", "sensor readings with their normal ranges"),
                 State("event_log", "list", "the instrument's event log: vendor codes, newest last"),
                 State("error_codes", "object", "what each vendor event code means"),
                 State("reagents", "object", "reagent packs on board: lot, tests left, expiry"),
                 State("calibration:<test>", "object", "the calibration in use for a test: lot, valid until"),
                 State("maintenance_tasks", "object", "remote tasks (run_maintenance) and hands-on tasks (a person "
-                                                     "at the instrument does them; request a work instruction)")]
+                                                     "at the instrument does them; request a work instruction)"),
+                State("maintenance_schedule", "object", "scheduled maintenance: interval and whether it is due"),
+                State("field_service", "object", "faults that need a field engineer, the part, and whether a "
+                                                 "remote reset should be tried first")]
 
     def _ops_procedures(self) -> list[Procedure]:
         if not self.ops:
@@ -101,7 +109,10 @@ class AnalyzerDriver:
                           [Param("task", "string", "remote task", allowed=list(self.ops.get("remote_tasks", {})))]),
                 Procedure("calibrate", "Calibrate a test with the calibrator on board, against the reagent lot in use.",
                           [Param("test", "string", f"vendor test code, one of {tests}")],
-                          errors={"E-405": "calibration failed; see the event log"})]
+                          errors={"E-405": "calibration failed; see the event log"}),
+                Procedure("reset_analyzer", "Remote reset of the analyzer's controller. Clears a transient fault; a "
+                          "hardware fault comes back.", [],
+                          safety_checks=[f"at most {self.ops.get('reset_limit', 2)} resets of a hardware fault"])]
 
     def perform_by_hand(self, task: str, by: str) -> dict:
         """Not a procedure: a person at the instrument did ``task``, as its own maintenance screen records it."""
@@ -125,6 +136,12 @@ class AnalyzerDriver:
         if state.startswith("qc_history:"):
             return self.qc_history.get(state.split(":", 1)[1], [])
         if self.ops:
+            if state == "mode":
+                return self.instrument.mode()
+            if state == "maintenance_schedule":
+                return self.instrument.schedule()
+            if state == "field_service":
+                return self.ops.get("field_service", {})
             if state == "sensors":
                 return self.instrument.sensors()
             if state == "event_log":
@@ -154,6 +171,18 @@ class AnalyzerDriver:
                 return Decision.block("specimen_quarantine",
                                       f"specimen {args['specimen_id']} showed {conditions}; re-running the same cup "
                                       "is not allowed", PHYSICAL_HINT)
+            if self.instrument.due:
+                return Decision.block("maintenance_due", f"start-of-day maintenance is due on {self.device_id}: "
+                                      f"{sorted(self.instrument.due)}",
+                                      "Run the due maintenance, check the reagent packs and pass QC before patient "
+                                      "specimens.")
+        if procedure == "reset_analyzer" and self.instrument.hw_fault:
+            limit = self.ops.get("reset_limit", 2)
+            if self.instrument.resets >= limit:
+                return Decision.block("reset_limit", f"{self.device_id} has been reset {self.instrument.resets} "
+                                      f"times on {self.instrument.hw_fault}",
+                                      "The fault is not transient. Open a service case and dispatch a field engineer "
+                                      "with the part; more resets wear the analyzer and lose its logs.")
         return None
 
     def write(self, procedure: str, args: dict) -> dict:
@@ -171,6 +200,8 @@ class AnalyzerDriver:
             if args["test"] not in self.profile.tests:
                 return {"status": "error", "error": "UNKNOWN_TEST", "detail": args["test"]}
             return self.instrument.calibrate(args["test"])
+        if procedure == "reset_analyzer":
+            return self.instrument.reset()
         raise KeyError(procedure)
 
     # --- wire ------------------------------------------------------------------
@@ -199,6 +230,9 @@ class AnalyzerDriver:
         unknown = [t for t in tests if t not in self.profile.tests]
         if unknown:
             return {"status": "error", "error": "UNKNOWN_TEST", "detail": f"analyzer does not offer {unknown}"}
+        refused = self.instrument.begin_run(specimen, tests)
+        if refused:
+            return refused
         message_id = f"MSG{next(self._ctl):05d}"
         message = self.instrument.result_message(specimen, tests, message_id)
         if self.profile.protocol == "astm":

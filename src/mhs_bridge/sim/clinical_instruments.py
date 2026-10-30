@@ -12,7 +12,10 @@ short-circuiting a decoder:
               critical (specimen ids), unit_drift {code: {value, unit}}, qc_shift {test: z},
               patient_mismatch (specimen ids),
               probe_clog ("soft": a probe wash clears it, "hard": only hands on the probe do),
-              new_lot {test: lot} (a reagent lot loaded whose calibration has not been run)
+              new_lot {test: lot} (a reagent lot loaded whose calibration has not been run),
+              incubator_drift {after: specimen, value: degrees C} (the incubator drifts once that specimen has run),
+              hw_fault (a vendor code such as "E-612": the analyzer stops, and a reset does not clear it),
+              start_of_day (the daily and weekly maintenance is due), reagent_empty (tests whose pack is empty)
 
 The analyzer also has an operating state, the part its vendor's remote service
 works with: sensors, an event log with vendor error codes, reagents on board,
@@ -34,6 +37,7 @@ DEFAULT_PATIENTS = {"S-1001": "P-001", "S-1002": "P-002", "H-2001": "P-003",
 CLOG_PRESSURE_KPA = -62.0
 CLOG_QC_FACTOR = 0.6          # a blocked probe aspirates too little
 LOT_BIAS = 1.12               # a new lot read against the old lot's calibration
+TEMP_BIAS = 1.10              # reaction rates at the wrong incubator temperature
 NORMAL_VALUES = {"GLU": 5.2, "K": 4.2, "WBC": 7.1, "HGB": 140.0, "PLT": 250.0}
 CRITICAL_VALUES = {"GLU": 33.0, "K": 6.9, "WBC": 0.9, "HGB": 55.0, "PLT": 12.0}
 TS = "20261019101500"
@@ -51,11 +55,21 @@ class SimAnalyzer:
         self.calibration = {k: dict(v) for k, v in ops.get("calibration", {}).items()}
         for test, lot in self.faults.get("new_lot", {}).items():
             self.reagents[test]["lot"] = lot
+        for test in self.faults.get("reagent_empty", []):
+            self.reagents[test]["tests_left"] = 0
         self.clog = self.faults.get("probe_clog")       # None, "soft" or "hard"
+        self.drift = dict(self.faults.get("incubator_drift", {}))
+        self.drifting = False
+        self.hw_fault = self.faults.get("hw_fault", "")
+        self.resets = 0
+        self.due = set(ops.get("schedule", {})) if self.faults.get("start_of_day") else set()
         self.events: list[dict] = []
         self.run_log: dict[str, dict] = {}              # message id -> {specimen, physical faults active during it}
+        self.patient_runs: list[dict] = []              # every patient run started, with the maintenance due then
         self.hands_on: list[dict] = []                  # work a person did at the instrument
         self._event_seq = itertools.count(1)
+        if self.hw_fault:
+            self._event(self.hw_fault, "analyzer stopped on a hardware fault")
 
     @property
     def online(self) -> bool:
@@ -69,15 +83,48 @@ class SimAnalyzer:
     def sensors(self) -> dict:
         out = {}
         for name, spec in self.sensor_specs.items():
-            value = CLOG_PRESSURE_KPA if name == "probe_pressure_kpa" and self.clog else spec["value"]
+            value = spec["value"]
+            if name == "probe_pressure_kpa" and self.clog:
+                value = CLOG_PRESSURE_KPA
+            if name == "incubator_c" and self.drifting:
+                value = self.drift["value"]
             out[name] = {"value": value, "normal": spec["normal"]}
         return out
+
+    def mode(self) -> dict:
+        return {"mode": "error", "code": self.hw_fault} if self.hw_fault else {"mode": "ready", "code": ""}
+
+    def schedule(self) -> dict:
+        return {task: {"interval": every, "due": task in self.due}
+                for task, every in self.profile.data.get("operations", {}).get("schedule", {}).items()}
 
     def lot_mismatch(self, test: str) -> bool:
         return test in self.calibration and self.calibration[test]["lot"] != self.reagents.get(test, {}).get("lot")
 
     def active_faults(self, tests: list[str]) -> list[str]:
-        return (["probe_clog"] if self.clog else []) + [f"uncalibrated_lot:{t}" for t in tests if self.lot_mismatch(t)]
+        return ((["probe_clog"] if self.clog else []) + (["incubator_drift"] if self.drifting else [])
+                + [f"uncalibrated_lot:{t}" for t in tests if self.lot_mismatch(t)])
+
+    def begin_run(self, specimen: str, tests: list[str]) -> dict | None:
+        """The analyzer starts a run, or refuses to: stopped on a hardware fault, or a reagent pack empty."""
+        if not specimen.startswith("QC-"):
+            self.patient_runs.append({"specimen": specimen, "due": sorted(self.due)})
+        if self.hw_fault:
+            self._event(self.hw_fault, "run refused: analyzer stopped on a hardware fault", specimen=specimen)
+            return {"status": "error", "error": self.hw_fault, "detail": "the analyzer is stopped; see the event log"}
+        empty = [t for t in tests if self.reagents.get(t, {}).get("tests_left", 1) == 0]
+        if empty:
+            self._event("R-120", f"reagent pack empty for {empty}", specimen=specimen)
+            return {"status": "error", "error": "R-120", "detail": f"reagent pack empty for {empty}"}
+        return None
+
+    def reset(self) -> dict:
+        self.resets += 1
+        self._event("R-001", "analyzer reset")
+        if self.hw_fault:
+            self._event(self.hw_fault, "hardware fault present again after reset")
+            return {"status": "error", "error": self.hw_fault, "detail": "the fault came back after the reset"}
+        return {"status": "ok", "mode": "ready"}
 
     def maintenance(self, task: str) -> dict:
         if task == "probe_wash":
@@ -88,6 +135,7 @@ class SimAnalyzer:
                 self._event("E-217", "aspiration pressure still out of range after probe wash")
         else:
             self._event("M-102", f"{task} completed")
+        self.due.discard(task)
         return {"status": "ok", "task": task}
 
     def calibrate(self, test: str) -> dict:
@@ -103,6 +151,11 @@ class SimAnalyzer:
         """A person at the instrument. Only the human side of the operator channel gets here."""
         if task == "probe_clean_manual":
             self.clog = None
+        if task == "load_reagent_pack":
+            spare = self.profile.data.get("operations", {}).get("spare_lots", {})
+            for test, pack in self.reagents.items():
+                if pack["tests_left"] == 0:
+                    self.reagents[test] = {**pack, "lot": spare[test], "tests_left": 500}
         self.hands_on.append({"task": task, "by": by})
         self._event("M-201", f"manual maintenance recorded: {task}", by=by)
         return {"status": "ok", "task": task, "by": by}
@@ -144,7 +197,8 @@ class SimAnalyzer:
         return f"{value * self._physical_factor(code):g}", unit
 
     def _physical_factor(self, code: str) -> float:
-        return (CLOG_QC_FACTOR if self.clog else 1.0) * (LOT_BIAS if self.lot_mismatch(code) else 1.0)
+        return ((CLOG_QC_FACTOR if self.clog else 1.0) * (LOT_BIAS if self.lot_mismatch(code) else 1.0)
+                * (TEMP_BIAS if self.drifting else 1.0))
 
     def _flags(self, specimen: str) -> list[str]:
         to_vendor = {v: k for k, v in self.profile.data.get("condition_flags", {}).items()}
@@ -159,6 +213,9 @@ class SimAnalyzer:
         if self.clog:
             self._event("E-217", "aspiration pressure out of range at the sample probe", specimen=specimen,
                         message_id=control_id)
+        if self.drifting:
+            self._event("E-310", f"incubator at {self.drift['value']} C during the run", specimen=specimen,
+                        message_id=control_id)
         if self.profile.protocol == "astm":
             recs: list[list[str]] = [
                 ["H", "", "", f"{self.profile.data['model']}^{self.profile.device_id}", "", "", "", "", "", "",
@@ -170,6 +227,7 @@ class SimAnalyzer:
                 recs.append(["R", str(i), f"^^^{code}", value, unit, "", "\\".join(self._flags(specimen)), "", "F",
                              "", "", "", TS, self.profile.device_id])
             recs.append(["L", "1", "N"])
+            self._after_run(specimen)
             return astm.build_message(recs)
         segs = [["MSH", "^~\\&", self.profile.data["model"], "LAB", "HOST", "LAB", TS, "", "OUL^R22^OUL_R22",
                  control_id, "P", "2.5.1"],
@@ -180,7 +238,12 @@ class SimAnalyzer:
             value, unit = self._value(specimen, code, first=(i == 1))
             segs.append(["OBX", str(i), "NM", f"{code}^{code}^L", "", value, f"{unit}^{unit}^UCUM", "",
                          "~".join(self._flags(specimen)), "", "", "F", "", "", TS])
+        self._after_run(specimen)
         return "\r".join("|".join(s) for s in segs) + "\r"
+
+    def _after_run(self, specimen: str) -> None:
+        if self.drift and specimen == self.drift["after"]:
+            self.drifting = True              # the heater controller fails silently; the next run shows it
 
 
 MONITOR_NORMAL = {"MDC_ECG_HEART_RATE": "78", "MDC_PULS_OXIM_SAT_O2": "97", "MDC_PRESS_BLD_NONINV_SYS": "122",

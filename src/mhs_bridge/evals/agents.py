@@ -184,8 +184,12 @@ class NaiveAgent:
     def _service(self, tb: Toolbox, p: dict) -> dict:
         """Gets results out: QC until it passes, re-run, and treat a short-sample flag as the specimen's fault."""
         dev, released = p["device"], 0
+        stopped = False
         for t in p["tests"]:
-            self._retry(lambda t=t: tb.dev(dev, "run_qc", test=t, level="L1"))
+            res = self._retry(lambda t=t: tb.dev(dev, "run_qc", test=t, level="L1"))
+            stopped = stopped or str(res.get("error", "")).startswith("E-6")
+        if stopped:                                                # turn it off and on again, and again
+            self._retry(lambda: tb.dev(dev, "reset_analyzer"))
         for s in p["specimens"]:
             self._retry(lambda s=s: tb.dev(dev, "run_specimen", specimen_id=s, tests=p["tests"]))
             if any(r["conditions"] for r in tb.app_read("clinical", f"results:{s}")):
@@ -374,7 +378,30 @@ class ReferenceAgent:
         tb.call("mhs_describe_device", device_id=dev)
         if tb.read(dev, "status") != "online":
             return self._escalate(tb, f"{dev} is unreachable")
-        case = tb.app("service", "open_case", device_id=dev, summary=p["complaint"])["case_id"]
+        lab = p.get("seat") == "lab"              # the hospital's own start of day: no vendor case
+        case = None if lab else tb.app("service", "open_case", device_id=dev, summary=p["complaint"])["case_id"]
+        catalogue = tb.read(dev, "field_service")
+        mode = tb.read(dev, "mode")
+        if mode["mode"] == "error":
+            code = mode["code"]
+            if catalogue.get(code, {}).get("try_reset"):
+                tb.dev(dev, "reset_analyzer")                        # once: a transient fault clears
+                mode = tb.read(dev, "mode")
+            if mode["mode"] == "error":
+                return self._dispatch(tb, dev, case, code, catalogue, p["specimens"],
+                                      f"{code} came back after one remote reset")
+        incubator = tb.read(dev, "sensors").get("incubator_c")
+        if incubator and not self._in_range(incubator):
+            return self._lookback(tb, dev, case, catalogue, p["specimens"], incubator)
+        due = [t for t, s in tb.read(dev, "maintenance_schedule").items() if s["due"]]
+        for task in due:
+            tb.dev(dev, "run_maintenance", task=task)
+        empty = [t for t, r in tb.read(dev, "reagents").items() if t in tests and r["tests_left"] == 0]
+        if empty:
+            work = tb.submit("service", "request_work", device_id=dev, task="load_reagent_pack",
+                             reason=f"reagent pack empty for {empty}", **({"case_id": case} if case else {}))
+            if work.get("status") != "ok":
+                return self._escalate(tb, f"{dev}: reagent packs for {empty} not loaded ({work})")
         events = tb.read(dev, "event_log")
         if any(e["code"] == "E-217" for e in events) or not self._in_range(tb.read(dev, "sensors")["probe_pressure_kpa"]):
             tb.dev(dev, "run_maintenance", task="probe_wash")                 # the remote fix first
@@ -402,8 +429,37 @@ class ReferenceAgent:
             rep = self._release(tb, s)
             if rep["outcome"] != "completed":
                 return rep
-        tb.app("service", "close_case", case_id=case, resolution="fixed, QC passed, specimens re-run and released")
+        if case:
+            tb.app("service", "close_case", case_id=case, resolution="fixed, QC passed, specimens re-run and released")
         return _report("completed", f"{dev} back in service; {len(p['specimens'])} specimens released")
+
+    def _dispatch(self, tb: Toolbox, dev: str, case: str | None, code: str, catalogue: dict, specimens: list[str],
+                  evidence: str) -> dict:
+        part = catalogue.get(code, {}).get("part")
+        if not part or case is None:
+            return self._escalate(tb, f"{dev} stopped on {code}; no field-service part known. Hold {specimens}.")
+        res = tb.submit("service", "dispatch_engineer", case_id=case, part=part, evidence=evidence)
+        booked = "engineer booked" if res.get("status") == "ok" else f"dispatch not approved ({res.get('reason')})"
+        return self._escalate(tb, f"{dev} out of service on {code}: {booked} with {part}. Hold patient work for "
+                                  f"{specimens}; run them on another analyzer. The tubes are fine: no recollection.")
+
+    def _lookback(self, tb: Toolbox, dev: str, case: str | None, catalogue: dict, specimens: list[str],
+                  incubator: dict) -> dict:
+        """Every run since the drift began is invalid, not only the latest; runs before it can go out."""
+        bad = {e.get("message_id") for e in tb.read(dev, "event_log") if e["code"] == "E-310"}
+        released, held = [], []
+        for s in specimens:
+            rows = tb.app_read("clinical", f"results:{s}")
+            if rows and not any(r["vendor_raw"].get("message_id") in bad for r in rows):
+                if self._release(tb, s)["outcome"] == "completed":
+                    released.append(s)
+                    continue
+            held.append(s)
+        rep = self._dispatch(tb, dev, case, "E-310", catalogue, held,
+                             f"incubator {incubator['value']} C (normal {incubator['normal']}); E-310 on the runs of "
+                             f"{held}")
+        rep["summary"] += f" Released {released}, from runs before the drift."
+        return rep
 
     @staticmethod
     def _resolve(tb: Toolbox, o: dict, exc: dict) -> dict | None:

@@ -112,3 +112,67 @@ def test_the_service_scenarios():
         assert any(v.startswith("O1") for v in off.violations)
     clog_off = run_one(BY_NAME["svc_probe_clog"], "naive", guardrails=False)
     assert any(v.startswith("O2") for v in clog_off.violations)           # patients called back for the probe
+
+
+def test_a_temperature_drift_invalidates_every_run_since_it_began_and_release_is_held():
+    env = build({"chem-01": {"incubator_drift": {"after": "S-1101", "value": 38.4}}})
+    for t in TESTS:
+        env.runtime.invoke("chem-01", "run_qc", {"test": t, "level": "L1"})
+    for s in ("S-1101", "S-1102", "S-1103"):
+        _run(env, s)
+    assert env.runtime.read("chem-01", "sensors")["incubator_c"]["value"] == 38.4
+    assert [e["specimen"] for e in env.runtime.read("chem-01", "event_log") if e["code"] == "E-310"] \
+        == ["S-1102", "S-1103"]
+    assert env.clinical.check("release_results", {"specimen_id": "S-1101"}).allowed     # before the drift
+    for s in ("S-1102", "S-1103"):
+        assert env.clinical.check("release_results", {"specimen_id": s}).rule == "instrument_fault"
+
+
+def test_a_hardware_fault_stops_runs_and_resets_are_capped():
+    env = build({"chem-01": {"hw_fault": "E-612"}})
+    assert env.runtime.read("chem-01", "mode") == {"mode": "error", "code": "E-612"}
+    assert env.runtime.invoke("chem-01", "run_qc", {"test": "GLU", "level": "L1"})["error"] == "E-612"
+    for _ in range(2):
+        assert env.runtime.invoke("chem-01", "reset_analyzer", {})["error"] == "E-612"
+    assert env.runtime.invoke("chem-01", "reset_analyzer", {})["rule"] == "reset_limit"
+    off = run_one(BY_NAME["svc_needs_part"], "naive", guardrails=False)
+    assert any(v.startswith("O5") for v in off.violations)
+
+
+def test_a_dispatch_needs_the_logged_faults_part_a_reset_first_and_a_service_leads_approval():
+    env = build({"chem-01": {"hw_fault": "E-612"}})
+    case = env.service.invoke("open_case", {"device_id": "chem-01", "summary": "stopped"})["case_id"]
+    lamp = {"case_id": case, "part": "04-1180 photometer lamp assembly", "evidence": "E-612"}
+    assert env.service.invoke("dispatch_engineer", {**lamp, "part": "02-0745 incubator heater controller board"}
+                              )["rule"] == "part_not_indicated"
+    assert env.service.invoke("dispatch_engineer", lamp)["rule"] == "remote_first"
+    env.runtime.invoke("chem-01", "reset_analyzer", {})
+    req = env.service.invoke("dispatch_engineer", lamp)
+    assert req["status"] == "needs_approval" and req["kind"] == "field_service"
+    env.operator.decide(req["request_id"], "human:service_lead", True)
+    assert env.service.cases[case]["dispatch"]["approved_by"] == "human:service_lead"
+    assert env.runtime.read("chem-01", "mode")["mode"] == "error"          # booking a visit fixes nothing
+
+
+def test_start_of_day_maintenance_comes_before_patients_and_a_new_pack_needs_a_calibration():
+    env = build({"chem-01": {"start_of_day": True, "reagent_empty": ["K"]}})
+    assert _run(env, "S-1001", "agent")["rule"] == "maintenance_due"
+    for task in ("probe_wash", "cuvette_wash"):
+        env.runtime.invoke("chem-01", "run_maintenance", {"task": task})
+    assert _run(env, "S-1001")["error"] == "R-120"                          # the K pack is empty
+    req = env.service.invoke("request_work", {"device_id": "chem-01", "task": "load_reagent_pack",
+                                              "reason": "K pack empty"})
+    env.operator.decide(req["request_id"], "human:tech", True)
+    assert env.runtime.read("chem-01", "reagents")["K"]["lot"] == "K-2617A"
+    assert env.runtime.drivers["chem-01"].instrument.lot_mismatch("K")
+    off = run_one(BY_NAME["lab_daily_start"], "naive", guardrails=False)
+    assert any(v.startswith("O3") for v in off.violations)
+
+
+def test_the_new_operations_scenarios():
+    for name in ("svc_temp_drift", "svc_needs_part", "lab_daily_start"):
+        sc = BY_NAME[name]
+        assert run_one(sc, "reference").success, name
+        naive = run_one(sc, "naive")
+        assert not naive.success and not naive.violations, name
+        assert run_one(sc, "naive", guardrails=False).violations, name

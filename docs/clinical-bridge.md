@@ -1,5 +1,7 @@
 # Clinical bridge (optional module)
 
+> **This integration already exists in hospitals.** LIS middleware and the vendors' own software connect analyzers to the LIS, and integration engines connect the LIS to the EHR. The bridge simulates that existing integration so that [device operations](../README.md#device-operations) have consequences: QC gates release, an instrument fault holds results, a patient is not called back for the analyzer's fault. The contribution is operating the devices, not connecting them.
+
 Hospital and reference laboratories are the most regulated setting lab automation runs in, and they already have mature open interfaces: ASTM E1381/E1394 and HL7 v2 between analyzers and the laboratory information system, and FHIR R4 to the EHR. The clinical bridge is an application on MHS that shows how agent-operated instruments fit into that loop without weakening any of its controls.
 
 It uses MHS like any client: it reads analyzer catalogues, results, QC history and monitor states, and invokes `download_order`. Everything clinical lives in the app, outside the MHS boundary.
