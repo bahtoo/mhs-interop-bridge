@@ -45,9 +45,11 @@ tags:
 Rules of thumb:
 
 * Every test needs a LOINC code. Unmapped codes are held, by design.
-* A unit that is neither `vendor_unit` nor `unit` is held, never guessed.
+* A unit that is neither `vendor_unit` nor `unit` is held, never guessed. Optional `reportable_range: [low, high]` and `known_units: {"<unit>": <factor>}` let the hold list ranked candidate readings for a reviewer; they are never applied.
 * Every flag that implies a physical problem maps to a canonical condition, which arms the specimen quarantine.
 
 ## 3. Test it
 
-Build a message with the simulator, or paste a captured and de-identified one, and assert the normalised values, units, interpretation and holds. See `tests/test_drivers.py` for the pattern.
+Build a message with the simulator, or paste a captured and de-identified one, and assert the normalised values, units, interpretation and holds. See `tests/test_drivers.py` for the pattern, and `tests/test_review_queue.py` for the unit-candidate exception.
+
+Nothing in the driver changes for human review: the clinical bridge drafts the order download and the release, and the analyzer only ever receives what a person approved.

@@ -42,7 +42,7 @@ Each idea below is implemented in this repository so it can be judged on running
 
 Claude found the gap in an earlier design. Asked to release a critical glucose, it refused to call a procedure described as "record that a clinician was told", because nobody had been told, and escalated instead. The procedure is now `request_critical_callback`.
 
-**Here.** `apps/operator.py`, the file-backed channel in `mcp_server.py`, and the `approve`, `deny` and `clear-estop` CLI commands.
+**Here.** `apps/operator.py`, the file-backed channel in `mcp_server.py`, and the `approve`, `deny`, `revise` and `clear-estop` CLI commands. Extended in v0.5.0 into a review queue for everything the clinical bridge sends; see 10.
 
 ## 6. Invariant-based physical safety evals
 

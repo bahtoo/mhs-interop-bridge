@@ -11,14 +11,14 @@ That is the bus. This repository does not rebuild it. It works on the three thin
 | Agent | Anthropic, or any MCP client | Claude in the evals; any MCP client through `mcp_server.py` |
 | **MHS runtime** | Anthropic (open source later) | `mhs_shim/`: a stand-in mirroring only the public description |
 | **Drivers** | Labs, vendors, integrators | `drivers/`: the main contribution |
-| **Applications on MHS** | Labs | `apps/`: lab record, clinical bridge, operator channel |
+| **Applications on MHS** | Labs | `apps/`: lab record, clinical bridge, operator channel and review queue |
 | Instruments | Vendors | `sim/`: simulated instruments speaking real protocols |
 
 ## What the stand-in does, and why it is small
 
 `mhs_shim/runtime.py` provides registry and discovery, `read` and `invoke`, enforcement of manifest parameter ranges and allowed values, routines that expand into individually checked steps, an emergency stop, and an audit trail. The manifest and reference file (`mhs_shim/manifest.py`) follow the published shape: states, procedures and natural-language tags, rendered into what the device measures, what it can adjust and which limits apply.
 
-Three things in the stand-in go beyond the public description and are marked PROPOSAL: the risk class, driver interlock hooks (`precheck` and `after`), and the rule that only a human clears the emergency stop. They are collected in [proposals.md](proposals.md).
+Five things in the stand-in go beyond the public description and are marked PROPOSAL: the risk class, driver interlock hooks (`precheck` and `after`), the rule that only a human clears the emergency stop, the stop's visibility in discovery and reference files, and the side-effect-free check (`preview`). They are collected in [proposals.md](proposals.md).
 
 Domain rules are deliberately absent from the stand-in. Whether a clinical result may reach a patient record, or whether a research curve is valid, is an application decision.
 

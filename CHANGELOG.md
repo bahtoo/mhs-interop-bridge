@@ -29,6 +29,7 @@ Human review for everything the bridge sends, prompted by an outside review that
 
 ### Results
 - Scripted: naive 6/24, 108 blocked, 0 violations; reference 24/24; naive with guardrails off 1/24, 61 violations. The same in copilot mode.
+- Claude, six scenarios × 3 trials: Sonnet 18/18 with guardrails on, 15/18 and 0 violations off; Haiku 18/18 on, 14/18 and 1 violation off (it drafted a release alongside a critical callback that the reviewer then rejected). See docs/evals.md.
 
 ### Not done
 - Ambiguous dilution factors: no simulated instrument sends one, and inventing the field would mean inventing protocol semantics.

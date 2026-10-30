@@ -58,7 +58,7 @@ All outbound messages are transaction Bundles with idempotent PUTs, tagged with 
 | Wrong-patient result: held, recollection Task, order on hold | `order_patient_mismatch` |
 | Specimen problem: foam or clot, same cup quarantined, recollection | `clin_foam_specimen`, `hema_clot` |
 | QC failure: Westgard blocks patient release | `clin_qc_failure` |
-| Unit drift: unknown unit held, never rescaled | `hema_unit_drift` |
+| Unit drift: unknown unit held, never rescaled; candidate readings listed for the reviewer | `hema_unit_drift` |
 | Unroutable order: no substitution, escalate | `order_unroutable` |
 | Missing accession: order kept with an exception and candidates; a human confirms one before dispatch | `order_missing_accession` |
 | Bedside vitals: MDC to LOINC, nurse validation, artefact and association holds | `vitals_chart`, `vitals_artefact`, `vitals_unassociated` |

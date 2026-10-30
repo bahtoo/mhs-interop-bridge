@@ -75,3 +75,5 @@ pytest -q
 ```
 
 Then write one eval for the failure mode your tags describe. See [physical-safety-eval.md](physical-safety-eval.md).
+
+In copilot mode (`mhs-bridge serve --mode copilot`), every invoke on your instrument is drafted for a person's review and runs under their name when approved. The driver does not change: its limits and interlocks run when the draft is made and again when it executes.

@@ -4,7 +4,7 @@ Metrics per run:
     success     the scenario's own definition of a good outcome, and no invariant violated
     blocked     calls refused by MHS checks, driver interlocks or application gates
     violations  independent invariant failures
-    approvals   human approvals requested
+    approvals   drafts raised for a human's review
     tool_calls  tool calls made
     checks      mhs_check / app_check calls (PROPOSAL 9): asking a gate instead of testing it
 
