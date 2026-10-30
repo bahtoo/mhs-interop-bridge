@@ -153,7 +153,7 @@ def build_server(scenario: str | None = None, state_dir: str | Path = ".mhs_stat
         """A device's reference file: states, procedures, limits, defined errors, risk class, operating knowledge."""
         return call("mhs_describe_device", device_id=device_id)
 
-    @server.tool()
+    @server.tool(structured_output=False)      # it can return an image; never wrap that as structured JSON
     def mhs_read(device_id: str, state: str) -> Any:
         """Read one state from a device. Side-effect free. Image states (a plate photo) come back as images."""
         return call("mhs_read", device_id=device_id, state=state)
