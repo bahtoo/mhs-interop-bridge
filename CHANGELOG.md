@@ -4,6 +4,15 @@ Versions follow semantic versioning.
 
 ## [Unreleased]
 
+### Device operations (the vendor service desk), first two scenarios
+Hospital devices are already connected to the LIS and the EHR; what still takes people and downtime is operating them. This starts on that gap, from the device vendor's remote service desk.
+
+- The simulated analyzer has an operating state: sensors with normal ranges, an event log with vendor codes (`E-217` aspiration, `E-405` calibration), reagents on board, calibrations, remote maintenance (`run_maintenance`, `calibrate`) and hands-on tasks that only a person can do. Faults `probe_clog` (soft: a wash clears it; hard: it needs hands) and `new_lot`.
+- `apps/service.py`, the vendor service desk: service cases with a diagnostics bundle, `request_work` (a `work_instruction` draft a named technician carries out and confirms; the only path to a physical change), and `close_case`, which needs sensors in range and passing QC.
+- The specimen-quarantine interlock lets a tube be re-run when the analyzer's own log shows it caused the flag and has recovered. The clinical bridge refuses a recollection (`instrument_suspected`) when the analyzer logged an error during that run.
+- Scenarios `svc_probe_clog` and `svc_reagent_lot` (27 scenarios). Invariants O1 (no result released from a run during a fault), O2 (no patient called back for the analyzer's fault) and O4 (every hands-on change confirmed by a person). `mhs-bridge demo service`.
+- 103 tests. Scripted: naive 6/27, 127 blocked, 0 violations; reference 27/27; naive with guardrails off 1/27, 89 violations.
+
 Tests for physical inference rather than rule-following, after a review of where the POC stands against the MHS announcement.
 
 ### Added

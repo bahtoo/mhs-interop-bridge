@@ -29,6 +29,7 @@ from .apps.clinical.bridge import ClinicalBridgeApp
 from .apps.clinical.ehr import MemoryEhr
 from .apps.device_review import DeviceReview
 from .apps.lab_record import LabRecordApp
+from .apps.service import ServiceApp
 from .apps.operator import OperatorChannel
 from .drivers.analyzer import AnalyzerDriver
 from .drivers.dialects import Profile, builtin_profile_data
@@ -53,12 +54,13 @@ class Environment:
     ehr: Any
     folder: Path
     devices: DeviceReview
+    service: ServiceApp
     mode: str = "autonomous"
     knowledge: str = "on"
 
     @property
     def apps(self) -> dict[str, Any]:
-        return {self.lab.app_id: self.lab, self.clinical.app_id: self.clinical}
+        return {self.lab.app_id: self.lab, self.clinical.app_id: self.clinical, self.service.app_id: self.service}
 
 
 MODES = ("autonomous", "copilot")
@@ -109,5 +111,5 @@ def build(faults: dict | None = None, folder: str | Path | None = None, audit_pa
     ehr = ehr or MemoryEhr()
     lab = LabRecordApp(runtime, operator)
     clinical = ClinicalBridgeApp(runtime, operator, ehr)
-    return Environment(world, runtime, operator, lab, clinical, ehr, folder, DeviceReview(runtime, operator), mode,
-                       knowledge)
+    return Environment(world, runtime, operator, lab, clinical, ehr, folder, DeviceReview(runtime, operator),
+                       ServiceApp(runtime, operator), mode, knowledge)

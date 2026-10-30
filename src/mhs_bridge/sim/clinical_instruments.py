@@ -10,7 +10,14 @@ short-circuiting a decoder:
 
     analyzer: offline, line_noise_naks, nak_storm, foam/clot/short_sample (specimen ids),
               critical (specimen ids), unit_drift {code: {value, unit}}, qc_shift {test: z},
-              patient_mismatch (specimen ids)
+              patient_mismatch (specimen ids),
+              probe_clog ("soft": a probe wash clears it, "hard": only hands on the probe do),
+              new_lot {test: lot} (a reagent lot loaded whose calibration has not been run)
+
+The analyzer also has an operating state, the part its vendor's remote service
+works with: sensors, an event log with vendor error codes, reagents on board,
+calibrations, and remote and hands-on maintenance. Physical causes live here;
+the driver sees only what the instrument reports.
     monitor:  offline, artefact (MDC codes), lead_off (MDC codes), unassociated
 """
 
@@ -22,7 +29,11 @@ import zlib
 from ..drivers.dialects import Profile
 from ..protocols import astm, hl7, lis_orders
 
-DEFAULT_PATIENTS = {"S-1001": "P-001", "S-1002": "P-002", "H-2001": "P-003"}
+DEFAULT_PATIENTS = {"S-1001": "P-001", "S-1002": "P-002", "H-2001": "P-003",
+                    "S-1101": "P-011", "S-1102": "P-012", "S-1103": "P-013"}
+CLOG_PRESSURE_KPA = -62.0
+CLOG_QC_FACTOR = 0.6          # a blocked probe aspirates too little
+LOT_BIAS = 1.12               # a new lot read against the old lot's calibration
 NORMAL_VALUES = {"GLU": 5.2, "K": 4.2, "WBC": 7.1, "HGB": 140.0, "PLT": 250.0}
 CRITICAL_VALUES = {"GLU": 33.0, "K": 6.9, "WBC": 0.9, "HGB": 55.0, "PLT": 12.0}
 TS = "20261019101500"
@@ -34,10 +45,67 @@ class SimAnalyzer:
         self.faults = faults or {}
         self.worklist: dict[str, dict] = {}
         self._qc_runs = 0
+        ops = profile.data.get("operations", {})
+        self.sensor_specs = {k: dict(v) for k, v in ops.get("sensors", {}).items()}
+        self.reagents = {k: dict(v) for k, v in ops.get("reagents", {}).items()}
+        self.calibration = {k: dict(v) for k, v in ops.get("calibration", {}).items()}
+        for test, lot in self.faults.get("new_lot", {}).items():
+            self.reagents[test]["lot"] = lot
+        self.clog = self.faults.get("probe_clog")       # None, "soft" or "hard"
+        self.events: list[dict] = []
+        self.run_log: dict[str, dict] = {}              # message id -> {specimen, physical faults active during it}
+        self.hands_on: list[dict] = []                  # work a person did at the instrument
+        self._event_seq = itertools.count(1)
 
     @property
     def online(self) -> bool:
         return not self.faults.get("offline", False)
+
+    # --- operating state ---------------------------------------------------
+
+    def _event(self, code: str, text: str, **extra) -> None:
+        self.events.append({"seq": next(self._event_seq), "code": code, "text": text, **extra})
+
+    def sensors(self) -> dict:
+        out = {}
+        for name, spec in self.sensor_specs.items():
+            value = CLOG_PRESSURE_KPA if name == "probe_pressure_kpa" and self.clog else spec["value"]
+            out[name] = {"value": value, "normal": spec["normal"]}
+        return out
+
+    def lot_mismatch(self, test: str) -> bool:
+        return test in self.calibration and self.calibration[test]["lot"] != self.reagents.get(test, {}).get("lot")
+
+    def active_faults(self, tests: list[str]) -> list[str]:
+        return (["probe_clog"] if self.clog else []) + [f"uncalibrated_lot:{t}" for t in tests if self.lot_mismatch(t)]
+
+    def maintenance(self, task: str) -> dict:
+        if task == "probe_wash":
+            if self.clog == "soft":
+                self.clog = None
+            self._event("M-101", "probe wash completed")
+            if self.clog:
+                self._event("E-217", "aspiration pressure still out of range after probe wash")
+        else:
+            self._event("M-102", f"{task} completed")
+        return {"status": "ok", "task": task}
+
+    def calibrate(self, test: str) -> dict:
+        if self.clog:
+            self._event("E-405", f"calibration failed for {test}: aspiration", test=test)
+            return {"status": "error", "error": "E-405", "detail": f"calibration of {test} failed: aspiration"}
+        self.calibration[test] = {**self.calibration.get(test, {}), "lot": self.reagents[test]["lot"],
+                                  "valid_until": "2026-12-01"}
+        self._event("C-100", f"calibration accepted for {test} lot {self.reagents[test]['lot']}", test=test)
+        return {"status": "ok", "test": test, "lot": self.reagents[test]["lot"]}
+
+    def perform_by_hand(self, task: str, by: str) -> dict:
+        """A person at the instrument. Only the human side of the operator channel gets here."""
+        if task == "probe_clean_manual":
+            self.clog = None
+        self.hands_on.append({"task": task, "by": by})
+        self._event("M-201", f"manual maintenance recorded: {task}", by=by)
+        return {"status": "ok", "task": task, "by": by}
 
     # --- host to instrument -----------------------------------------------
 
@@ -67,19 +135,30 @@ class SimAnalyzer:
             shift = float(self.faults.get("qc_shift", {}).get(test, 0.0))
             self._qc_runs += 1
             scatter = (zlib.crc32(f"{specimen}{self._qc_runs}".encode()) % 801 / 1000) - 0.4
-            return f"{target['mean'] + (shift + scatter) * target['sd']:.3f}", unit
+            value = (target["mean"] + (shift + scatter) * target["sd"]) * self._physical_factor(code)
+            return f"{value:.3f}", unit
         drift = self.faults.get("unit_drift", {})
         if code in drift:
             return f"{drift[code]['value']}", drift[code]["unit"]
         value = CRITICAL_VALUES[code] if first and specimen in self.faults.get("critical", []) else NORMAL_VALUES[code]
-        return f"{value:g}", unit
+        return f"{value * self._physical_factor(code):g}", unit
+
+    def _physical_factor(self, code: str) -> float:
+        return (CLOG_QC_FACTOR if self.clog else 1.0) * (LOT_BIAS if self.lot_mismatch(code) else 1.0)
 
     def _flags(self, specimen: str) -> list[str]:
         to_vendor = {v: k for k, v in self.profile.data.get("condition_flags", {}).items()}
-        return ["N"] + [to_vendor[c] for c in ("foam", "clot", "short_sample")
-                        if specimen in self.faults.get(c, []) and c in to_vendor]
+        flags = ["N"] + [to_vendor[c] for c in ("foam", "clot", "short_sample")
+                         if specimen in self.faults.get(c, []) and c in to_vendor]
+        if self.clog and "short_sample" in to_vendor and to_vendor["short_sample"] not in flags:
+            flags.append(to_vendor["short_sample"])         # the probe draws too little: looks like a short sample
+        return flags
 
     def result_message(self, specimen: str, tests: list[str], control_id: str) -> str:
+        self.run_log[control_id] = {"specimen": specimen, "faults": self.active_faults(tests)}
+        if self.clog:
+            self._event("E-217", "aspiration pressure out of range at the sample probe", specimen=specimen,
+                        message_id=control_id)
         if self.profile.protocol == "astm":
             recs: list[list[str]] = [
                 ["H", "", "", f"{self.profile.data['model']}^{self.profile.device_id}", "", "", "", "", "", "",

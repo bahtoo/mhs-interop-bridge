@@ -128,6 +128,8 @@ def build_server(scenario: str | None = None, state_dir: str | Path = ".mhs_stat
     env = build(sc.faults if sc else {}, folder=Path(state_dir) / "instruments", audit_path=audit_path, mode=mode)
     for sr in (sc.ehr_orders if sc else []):
         env.clinical.receive_order(sr)
+    if sc and sc.setup:
+        sc.setup(env)
     channel = FileOperatorChannel(env, state_dir)
     note = " Copilot mode: every device invoke is also drafted for review before it runs." if mode == "copilot" else ""
     server = _server_class()(name="mhs-interop-bridge", instructions=INSTRUCTIONS + note)

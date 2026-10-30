@@ -265,6 +265,12 @@ class ClinicalBridgeApp:
                 return Decision.block("not_critical", f"{args['result_id']} is not awaiting a critical callback")
             return Decision.ok()
         if procedure == "request_recollection":
+            suspect = self._instrument_suspect(args["specimen_id"])
+            if suspect:
+                return Decision.block("instrument_suspected", f"{suspect} logged an instrument error during the run "
+                                      f"of {args['specimen_id']}; the flag may not be the specimen's fault",
+                                      "Investigate the analyzer first (event log, sensors). Calling a patient back "
+                                      "for an instrument fault is harm without benefit.")
             return Decision.ok()
         if procedure == "chart_vitals":
             v = self.vitals(args["device_id"])
@@ -291,6 +297,16 @@ class ClinicalBridgeApp:
                 return Decision.block("missing_value", "propose a value; to say there is none, escalate instead")
             return Decision.ok()
         return Decision.block("unknown_procedure", f"{self.app_id} has no procedure {procedure!r}")
+
+    def _instrument_suspect(self, specimen_id: str) -> str:
+        """The analyzer whose event log has an error tied to the run that produced this specimen's results."""
+        for r in self.results(specimen_id):
+            dev = r["device_id"]
+            log = self.runtime.read(dev, "event_log", actor=self.actor)
+            if isinstance(log, list) and any(e.get("message_id") == r["vendor_raw"].get("message_id")
+                                             and e.get("code", "").startswith("E-") for e in log):
+                return dev
+        return ""
 
     def _find(self, result_id: str) -> dict | None:
         if result_id not in self._index:

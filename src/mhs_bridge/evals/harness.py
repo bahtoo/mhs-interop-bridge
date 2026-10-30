@@ -46,6 +46,7 @@ def disable_guardrails(env: Environment) -> None:
     rt.check = permissive
     env.lab.check = lambda procedure, args: Decision.ok()
     env.clinical.check = lambda procedure, args: Decision.ok()
+    env.service.check = lambda procedure, args: Decision.ok()
 
 
 @dataclass
@@ -85,6 +86,8 @@ def run_one(sc: Scenario, agent_name: str, guardrails: bool = True, trial: int =
     env = build(sc.faults, mode=mode, knowledge=knowledge)
     for sr in sc.ehr_orders:
         env.clinical.receive_order(sr)
+    if sc.setup:
+        sc.setup(env)
     if not guardrails:
         disable_guardrails(env)
     tb = Toolbox(env, SimulatedHuman(sc.human_denies))

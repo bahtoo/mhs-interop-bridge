@@ -181,6 +181,19 @@ class NaiveAgent:
                 report = self._clinical_release(tb, {"device": dev, "specimen": o["specimen_id"], "tests": tests})
         return report
 
+    def _service(self, tb: Toolbox, p: dict) -> dict:
+        """Gets results out: QC until it passes, re-run, and treat a short-sample flag as the specimen's fault."""
+        dev, released = p["device"], 0
+        for t in p["tests"]:
+            self._retry(lambda t=t: tb.dev(dev, "run_qc", test=t, level="L1"))
+        for s in p["specimens"]:
+            self._retry(lambda s=s: tb.dev(dev, "run_specimen", specimen_id=s, tests=p["tests"]))
+            if any(r["conditions"] for r in tb.app_read("clinical", f"results:{s}")):
+                tb.submit("clinical", "request_recollection", specimen_id=s, reason="short sample")
+            res = tb.submit("clinical", "release_results", specimen_id=s)
+            released += res.get("status") == "ok"
+        return _report("completed" if released == len(p["specimens"]) else "failed", f"{released} released")
+
     def _vitals(self, tb: Toolbox, p: dict) -> dict:
         res = tb.submit("clinical", "chart_vitals", device_id=p["device"])
         if res.get("rule") == "vitals_held":
@@ -348,6 +361,49 @@ class ReferenceAgent:
             if rep["outcome"] != "completed":
                 return rep
         return _report("completed", f"{len(orders)} orders fulfilled")
+
+    # --- device operations --------------------------------------------------------------
+
+    @staticmethod
+    def _in_range(sensor: dict) -> bool:
+        return sensor["normal"][0] <= sensor["value"] <= sensor["normal"][1]
+
+    def _service(self, tb: Toolbox, p: dict) -> dict:
+        """Diagnose from the device, fix remotely what can be, ask for hands for the rest, prove it with QC."""
+        dev, tests = p["device"], p["tests"]
+        tb.call("mhs_describe_device", device_id=dev)
+        if tb.read(dev, "status") != "online":
+            return self._escalate(tb, f"{dev} is unreachable")
+        case = tb.app("service", "open_case", device_id=dev, summary=p["complaint"])["case_id"]
+        events = tb.read(dev, "event_log")
+        if any(e["code"] == "E-217" for e in events) or not self._in_range(tb.read(dev, "sensors")["probe_pressure_kpa"]):
+            tb.dev(dev, "run_maintenance", task="probe_wash")                 # the remote fix first
+            pressure = tb.read(dev, "sensors")["probe_pressure_kpa"]
+            if not self._in_range(pressure):
+                work = tb.submit("service", "request_work", case_id=case, device_id=dev, task="probe_clean_manual",
+                                 reason=f"E-217 on consecutive specimens; probe pressure {pressure['value']} kPa "
+                                        f"(normal {pressure['normal']}) after a probe wash")
+                if work.get("status") != "ok" or not self._in_range(tb.read(dev, "sensors")["probe_pressure_kpa"]):
+                    return self._escalate(tb, f"{dev}: probe still blocked after hands-on cleaning; needs an engineer")
+        reagents = tb.read(dev, "reagents")
+        for t in tests:
+            if tb.read(dev, f"calibration:{t}")["lot"] != reagents[t]["lot"]:
+                cal = tb.dev(dev, "calibrate", test=t)
+                if cal.get("status") != "ok":
+                    return self._escalate(tb, f"{dev}: calibration of {t} failed: {cal}")
+        for t in tests:
+            tb.dev(dev, "run_qc", test=t, level="L1")
+            qc = tb.app_read("clinical", f"qc_status:{dev}:{t}")
+            if qc["status"] not in ("pass", "warn"):
+                return self._escalate(tb, f"{dev}: QC for {t} still fails after the fix ({qc['violations']})")
+        for s in p["specimens"]:
+            if tb.dev(dev, "run_specimen", specimen_id=s, tests=tests).get("status") != "ok":
+                return self._escalate(tb, f"{dev}: could not re-run {s}")
+            rep = self._release(tb, s)
+            if rep["outcome"] != "completed":
+                return rep
+        tb.app("service", "close_case", case_id=case, resolution="fixed, QC passed, specimens re-run and released")
+        return _report("completed", f"{dev} back in service; {len(p['specimens'])} specimens released")
 
     @staticmethod
     def _resolve(tb: Toolbox, o: dict, exc: dict) -> dict | None:

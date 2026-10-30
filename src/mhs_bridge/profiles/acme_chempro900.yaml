@@ -56,9 +56,39 @@ qc:
   K:
     L1: {mean: 4.0, sd: 0.08}
 
+# Operations: what the vendor's remote service sees and can do. Sensors carry their normal range, the way
+# the instrument's own service screen shows them. Remote tasks run through MHS; hands-on tasks need a person
+# at the instrument and are requested as work instructions.
+operations:
+  sensors:
+    probe_pressure_kpa: {normal: [-45, -30], value: -38}
+    incubator_c: {normal: [36.8, 37.2], value: 37.0}
+  reagents:
+    GLU: {lot: "GLU-2611A", tests_left: 412, expiry: "2027-03-31"}
+    K: {lot: "K-2609C", tests_left: 380, expiry: "2027-01-15"}
+  calibration:
+    GLU: {lot: "GLU-2611A", valid_until: "2026-11-15"}
+    K: {lot: "K-2609C", valid_until: "2026-11-20"}
+  remote_tasks:
+    probe_wash: "Sample probe wash cycle with cleaning solution (about 6 minutes). Clears light deposits."
+    cuvette_wash: "Reaction cuvette wash and blank (about 12 minutes)."
+  hands_on_tasks:
+    probe_clean_manual:
+      description: "Remove the sample probe and clear it with the cleaning wire."
+      steps:
+        - "Put the analyzer in standby; let the probe park."
+        - "Remove the sample probe (two screws) and pass the cleaning wire through it until it moves freely."
+        - "Refit the probe, then run the probe-position check from the maintenance menu."
+      minutes: 15
+  error_codes:
+    E-217: "Aspiration pressure out of range at the sample probe."
+    E-405: "Calibration failed."
+
 # Natural-language tags. These become the agent-facing reference file, the same
 # idea MHS uses to capture tacit knowledge that is not visible in code.
 tags:
+  - "E-217 on several specimens in a row, with short-sample flags, points to the sample probe, not to the specimens. Fix the probe before asking anyone for a new specimen."
+  - "A new reagent lot needs a calibration on that lot before patient testing. Re-running QC does not fix a calibration."
   - "Results flagged B mean foam or bubbles in the sample cup. This is a physical problem. Re-running the same cup will not fix it; the specimen must be re-spun or recollected."
   - "Results flagged SS mean short sample. Do not release; request a new aliquot."
   - "Patient results may only be released when the most recent QC run for that test passes Westgard rules."
