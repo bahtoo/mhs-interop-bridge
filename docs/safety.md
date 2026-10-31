@@ -21,7 +21,13 @@ Routines expand into steps, and every step passes the same checks.
 | `quarantine` | SiLA 2 liquid handler | the position was reported in `FoamDetected` |
 | `capacity` | SiLA 2 liquid handler | the target well would exceed 300 uL |
 | `plate_location` | liquid handler, plate reader | the labware is not at the device |
-| `specimen_quarantine` | analyzer | the specimen's last results carried foam, clot or short sample |
+| `specimen_quarantine` | analyzer | the specimen's last results carried foam, clot or short sample, unless the analyzer logged that it caused the flag and has recovered |
+| `maintenance_due` | analyzer | a patient specimen while the start-of-day maintenance is due |
+| `reset_limit` | analyzer | a remote reset of a hardware fault beyond the profile's limit |
+| `tube_cold` | CT | an exposure (air calibration, QA scan) before the tube warm-up |
+| `gantry_not_clear` | CT | an air calibration with anything in the gantry, or a release with the phantom on the table |
+| `no_phantom` | CT | a QA scan without the water phantom on the table |
+| `qa_not_passed` | CT | release for clinical use without a QA pass since the last air calibration |
 
 Devices also refuse on their own, through defined errors: `DestinationUnavailable` (plate mover), `InsufficientVolume`, `PositionNotFound`, and `ASTM_SESSION_ABORTED` after six NAKs.
 
@@ -37,6 +43,14 @@ Devices also refuse on their own, through defined errors: `DestinationUnavailabl
 | clinical | `unroutable`, `already_dispatched` | order cannot be, or has been, dispatched |
 | clinical | `vitals_held`, `already_charted` | artefact, lead-off, unassociated monitor, or already charted |
 | clinical | `data_exception` | the order has an unresolved data exception, such as a missing accession |
+| clinical | `instrument_fault` | the analyzer logged an error during the run of the specimen being released |
+| clinical | `instrument_suspected` | a recollection for a specimen whose run the analyzer logged an error on |
+| clinical | `analyzer_down`, `not_needed` | an order routed to a stopped analyzer (reroute it); a reroute when every routed analyzer is in service |
+| service | `no_service_access`, `unknown_case`, `case_closed`, `wrong_device` | the device has no service surface, or the case is unknown, closed or for another device |
+| service | `not_hands_on` | a work instruction for a task the device does not list as hands-on |
+| service | `part_not_indicated`, `remote_first`, `already_dispatched` | a dispatch whose part matches no logged fault, before the one remote reset the catalogue asks for, or a second one |
+| service | `not_recovered`, `qc_not_passing` | closing a case with a sensor out of range, or QC or daily QA not passing |
+| service | needs approval | `request_work` (the person who does the work confirms it) and `dispatch_engineer` (a service lead) |
 | clinical | needs approval | every procedure: `dispatch_order`, `reroute_order`, `release_results`, `request_recollection`, `request_critical_callback`, `chart_vitals`, `propose_resolution` |
 
 ## 4. Operator channel

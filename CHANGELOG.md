@@ -4,6 +4,10 @@ Versions follow semantic versioning.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-31
+
+Hospital device operations, lab and radiology, from the device vendor's remote service desk; and evals for physical inference.
+
 ### Device operations (the vendor service desk)
 Hospital devices are already connected to the LIS and the EHR; what still takes people and downtime is operating them. This starts on that gap, from the device vendor's remote service desk.
 
@@ -24,9 +28,10 @@ Hospital devices are already connected to the LIS and the EHR; what still takes 
 - Scenarios `rad_daily_qa` and `rad_detector_fault` (34 scenarios). Invariants R1 (no release with a fault), R2 (no air calibration with anything in the gantry), R3 (no exposure on a cold tube). `mhs-bridge demo radiology`.
 - 118 tests. Scripted: naive 6/34, 167 blocked, 0 violations; reference 34/34; naive with guardrails off 1/34, 116 violations. Results for the earlier 32 scenarios are unchanged.
 
+### Physical inference
 Tests for physical inference rather than rule-following, after a review of where the POC stands against the MHS announcement.
 
-### Added
+#### Added
 - `docs/findings.md`: four findings from the Claude transcripts, v0.3.2 to v0.5.0. The README maps each statement in Anthropic's MHS announcement to what answers it here.
 - Knowledge ablation: `eval --knowledge off` removes the operating knowledge from every device profile (tags, error hints, interlock hints) and the physical-failure line from the Claude prompt. Scripted results are unchanged.
 - Visual evidence: the plate reader takes a top-view photo at each read (`last_image:<plate>`, a PNG written with the standard library). Claude and MCP clients receive it as an image; transcripts keep its metadata, not its pixels.
@@ -34,10 +39,10 @@ Tests for physical inference rather than rule-following, after a review of where
 - The Claude system prompt has one more line: some states are images; look at them.
 - 94 tests (was 85).
 
-### Changed
+#### Changed
 - I5 counts a touch as a same-well retry only once the foam was knowable: immediately when the device reports it, otherwise from the next plate read. Results for existing scenarios are unchanged.
 
-### Results
+#### Results
 - Scripted: naive 6/25, 111 blocked, 0 violations; reference 25/25; naive with guardrails off 1/25, 62 violations.
 
 ## [0.5.0] - 2026-10-24

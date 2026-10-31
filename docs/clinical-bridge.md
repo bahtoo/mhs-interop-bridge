@@ -36,6 +36,28 @@ sequenceDiagram
     App-->>EHR: Observations + DiagnosticReport basedOn ServiceRequest + Provenance; Task completed
 ```
 
+## When the analyzer stops
+
+Routing reads the analyzers in service. An order already routed to an analyzer that then stops is not sent to it: `dispatch_order` is refused (`analyzer_down`) and `reroute_order` drafts the move to the backup, for a person to approve. The vendor's service desk hears about the stopped analyzer through a case (`lab_downtime`).
+
+```mermaid
+sequenceDiagram
+    participant EHR
+    participant App as Clinical bridge
+    participant Agent
+    participant Human as Technologist
+    participant Desk as Service desk
+    EHR->>App: ServiceRequest, routed to chem-01
+    Note over App: chem-01 stops (E-612)
+    Agent->>App: dispatch_order
+    App-->>Agent: blocked: analyzer_down
+    Agent->>Desk: open_case chem-01
+    Agent->>App: reroute_order
+    App->>App: route over analyzers in service: chem-02; draft
+    Human->>App: approve
+    Agent->>App: dispatch_order (to chem-02), then QC, run and release as above
+```
+
 ## FHIR resources
 
 | Direction | Resource | When |
