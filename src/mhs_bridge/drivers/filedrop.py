@@ -9,6 +9,7 @@ is the reusable pattern for it, shown with an absorbance plate reader.
 
 from __future__ import annotations
 
+import base64
 import csv
 import io
 import itertools
@@ -44,7 +45,8 @@ class FileDropReaderDriver:
             "file drop (command JSON in, CSV export and status JSON out)",
             [State("status", "string", "online or offline"),
              State("instrument_status", "object", "the instrument's own status file: plates present, saturation, last error"),
-             State("last_read:<plate>", "object", "absorbance per well from the latest export for that plate")],
+             State("last_read:<plate>", "object", "absorbance per well from the latest export for that plate"),
+             State("last_image:<plate>", "image", "top-view photo of the plate taken at its latest read (PNG)")],
             [Procedure("ReadPlate", "Read absorbance for every well of a plate that is in the reader.",
                        [Param("Plate", "string", "plate id"),
                         Param("WavelengthNm", "number", "wavelength", lim["min"], lim["max"], "nm")],
@@ -65,6 +67,13 @@ class FileDropReaderDriver:
             rows = csv.reader(io.StringIO(exports[-1].read_text(encoding="utf-8")))
             next(rows)
             return {well: float(v) for well, v in rows}
+        if state.startswith("last_image:"):
+            plate = state.split(":", 1)[1]
+            photos = sorted((self.folder / "export").glob(f"{plate}_*.png"))
+            if not photos:
+                return {}
+            return {"media_type": "image/png", "plate": plate, "taken": photos[-1].stem,
+                    "data_base64": base64.b64encode(photos[-1].read_bytes()).decode("ascii")}
         raise KeyError(state)
 
     def precheck(self, procedure: str, args: dict):

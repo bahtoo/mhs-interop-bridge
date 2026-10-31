@@ -3,8 +3,13 @@
 * ``SimLiquidHandler``: a SiLA 2 server implementing LiquidHandlingService.
 * ``SimPlateMover``: a SiLA 2 server implementing PlateHandlingService.
 * ``SimFileDropReader``: an absorbance reader with no API at all. Its control
-  software watches an inbox folder for command files and writes CSV exports
-  and a status file, the way many legacy instruments are automated in practice.
+  software watches an inbox folder for command files and writes CSV exports,
+  a top-view photo of the plate and a status file, the way many legacy
+  instruments are automated in practice.
+
+With liquid level detection off (``lld = False``, fault ``lld_off``) the liquid
+handler still foams viscous samples but reports nothing: no ``FoamDetected``, and
+no foam in its plate map. The bubbles are still in the world, and in the photo.
 
 The SiLA servers expose ``call_command`` and ``get_property`` with the same
 shape as a SiLA 2 client stub, so the driver code that talks to them is the
@@ -20,6 +25,7 @@ import zlib
 from pathlib import Path
 
 from ..protocols.sila2 import SiLA2ExecutionError
+from .imaging import render_plate
 from .world import FOAM_FLOW_UL_S, MAX_GENTLE_MIX, LabWorld
 
 
@@ -31,12 +37,13 @@ class SimLiquidHandler:
     def __init__(self, world: LabWorld, device_id: str = "lh-01"):
         self.world = world
         self.device_id = device_id
+        self.lld = True             # liquid level detection: how this instrument knows about foam at all
         world.online.setdefault(device_id, True)
 
     def get_property(self, feature: str, prop: str) -> str:
         if prop == "PlateMap":
             return json.dumps({pid: {wid: {"volume_ul": round(w.volume_ul, 2), "conc_ug_ml": round(w.conc_ug_ml, 3),
-                                           "liquid": w.liquid, "foam": w.foam}
+                                           "liquid": w.liquid, "foam": w.foam and self.lld}
                                      for wid, w in p.wells.items() if w.volume_ul > 0}
                                for pid, p in self.world.plates.items()})   # contents it dispensed, wherever the plate is now
         if prop == "DeckLayout":
@@ -54,7 +61,7 @@ class SimLiquidHandler:
                 raise SiLA2ExecutionError("PositionNotFound", f"{loc} is not on the deck")
         src, dst = self.world.well(src_loc), self.world.well(dst_loc)
         vol, flow, mix = float(params["Volume"]), float(params["FlowRate"]), int(params.get("MixCycles", 0))
-        if src.foam:
+        if src.foam and self.lld:
             raise SiLA2ExecutionError("FoamDetected", f"liquid level detection hit foam in {src_loc}", {"Well": src_loc})
         if src.volume_ul < vol:
             raise SiLA2ExecutionError("InsufficientVolume", f"{src_loc} holds {src.volume_ul} uL")
@@ -72,6 +79,9 @@ class SimLiquidHandler:
         if dst.viscous and (flow > FOAM_FLOW_UL_S or mix > MAX_GENTLE_MIX):
             dst.foam = True
             self.world.foam_events.append((idx, dst_loc))
+            if not self.lld:
+                self.world.silent_foam.add(dst_loc)
+                return {"TargetVolume": round(dst.volume_ul, 2)}      # foamed, and nothing noticed
             raise SiLA2ExecutionError("FoamDetected",
                                       f"bubbles formed in {dst_loc} (viscous liquid, {flow} uL/s, {mix} mix cycles)",
                                       {"Well": dst_loc})
@@ -159,7 +169,9 @@ class SimFileDropReader:
                 w.writerow([wid, f"{min(self.SATURATION, a):.3f}"])
             (self.folder / "export" / f"{plate_id}_{self._runs:04d}.csv").write_text(buf.getvalue(), encoding="utf-8",
                                                                                     newline="")
-            self.world.reads.append({"plate": plate_id, "wavelength": wl})
+            (self.folder / "export" / f"{plate_id}_{self._runs:04d}.png").write_bytes(
+                render_plate(self.world.plates[plate_id]))
+            self.world.reads.append({"plate": plate_id, "wavelength": wl, "after": len(self.world.transfers)})
             self.world.readings[plate_id] = {
                 row["Well"]: float(row[f"Abs{wl}"]) for row in csv.DictReader(io.StringIO(buf.getvalue()))}
             self._write_status()

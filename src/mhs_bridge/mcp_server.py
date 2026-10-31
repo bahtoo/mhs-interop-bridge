@@ -21,6 +21,7 @@ What the server writes for the human side, in <state>/:
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ from typing import Any
 from .apps.operator import ApprovalEvent, verify_chain
 from .environment import Environment, build
 from .evals.scenarios import BY_NAME
-from .tools import dispatch, render
+from .tools import dispatch, image_caption, is_image, render
 
 INSTRUCTIONS = ("Laboratory instruments on the Model Hardware Standard (stand-in runtime), plus applications built on "
                 "it. Start with mhs_list_devices, read mhs_describe_device before operating a device, and treat "
@@ -108,6 +109,19 @@ def _server_class():
         return FastMCP
 
 
+def _image_class():
+    try:
+        from mcp.server.mcpserver import Image      # MCP Python SDK 2.x
+        return Image
+    except ImportError:
+        pass
+    try:
+        from mcp.server.fastmcp import Image        # MCP Python SDK 1.x
+        return Image
+    except ImportError:
+        return None
+
+
 def build_server(scenario: str | None = None, state_dir: str | Path = ".mhs_state", audit_path: str | None = None,
                  mode: str = "autonomous"):
     sc = BY_NAME[scenario] if scenario else None
@@ -118,10 +132,15 @@ def build_server(scenario: str | None = None, state_dir: str | Path = ".mhs_stat
     note = " Copilot mode: every device invoke is also drafted for review before it runs." if mode == "copilot" else ""
     server = _server_class()(name="mhs-interop-bridge", instructions=INSTRUCTIONS + note)
 
-    def call(name: str, **kw: Any) -> str:
+    def call(name: str, **kw: Any) -> Any:
         channel.sync()
         out = dispatch(env, name, kw)
         channel.sync()
+        if is_image(out):
+            image = _image_class()
+            if image is None:        # an SDK without Image: say what there is rather than send base64 as text
+                return image_caption(out) + "\n(image not shown: this MCP SDK cannot return images)"
+            return [image(data=base64.b64decode(out["data_base64"]), format="png"), image_caption(out)]
         return render(env, out)
 
     @server.tool()
@@ -134,9 +153,9 @@ def build_server(scenario: str | None = None, state_dir: str | Path = ".mhs_stat
         """A device's reference file: states, procedures, limits, defined errors, risk class, operating knowledge."""
         return call("mhs_describe_device", device_id=device_id)
 
-    @server.tool()
-    def mhs_read(device_id: str, state: str) -> str:
-        """Read one state from a device. Side-effect free."""
+    @server.tool(structured_output=False)      # it can return an image; never wrap that as structured JSON
+    def mhs_read(device_id: str, state: str) -> Any:
+        """Read one state from a device. Side-effect free. Image states (a plate photo) come back as images."""
         return call("mhs_read", device_id=device_id, state=state)
 
     @server.tool()
