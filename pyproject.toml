@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mhs-interop-bridge"
-version = "0.5.0"
+version = "0.6.0"
 description = "Open-protocol drivers, physical-world evals and cookbooks for the Model Hardware Standard (MHS): SiLA 2, file-drop instruments, ASTM and HL7 analyzers, with an optional FHIR clinical bridge."
 readme = "README.md"
 license = {text = "MIT"}

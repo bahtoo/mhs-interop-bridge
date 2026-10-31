@@ -11,8 +11,8 @@ That is the bus. This repository does not rebuild it. It works on the three thin
 | Agent | Anthropic, or any MCP client | Claude in the evals; any MCP client through `mcp_server.py` |
 | **MHS runtime** | Anthropic (open source later) | `mhs_shim/`: a stand-in mirroring only the public description |
 | **Drivers** | Labs, vendors, integrators | `drivers/`: the main contribution |
-| **Applications on MHS** | Labs | `apps/`: lab record, clinical bridge, operator channel and review queue |
-| Instruments | Vendors | `sim/`: simulated instruments speaking real protocols |
+| **Applications on MHS** | Labs, vendors | `apps/`: lab record, clinical bridge, vendor service desk, operator channel and review queue |
+| Instruments | Vendors | `sim/`: simulated instruments speaking real protocols, with the service surface their vendors see |
 
 ## What the stand-in does, and why it is small
 
@@ -61,6 +61,7 @@ Applications use MHS the way any client does: they discover, read and invoke. Th
 
 * **Lab record** (`apps/lab_record.py`) accepts a dilution row only if no well is saturated or foamed and R2 is at least 0.98. It combines the liquid handler's plate map (expected concentration, foam) with the reader's export (absorbance, saturation). No single device can make that judgement.
 * **Clinical bridge** (`apps/clinical/`) handles FHIR orders in, capability routing over analyzer catalogues, order download, release gates, critical-result notification, recollection, vital-sign charting and FHIR out. See [clinical-bridge.md](clinical-bridge.md).
+* **Vendor service desk** (`apps/service.py`) keeps service cases with a diagnostics bundle read from the device, drafts work instructions for hands-on tasks (`request_work`, which a named person carries out and confirms) and field-service visits (`dispatch_engineer`, approved by a named service lead), and closes a case only when sensors are in range and QC or daily QA passes. It works for the analyzers and the CT alike, through the states each device exposes. See [Device operations](../README.md#device-operations).
 * **Operator channel** (`apps/operator.py`) holds the review queue, escalations and the emergency-stop clear. Every clinical message, and in copilot mode every device invoke (`apps/device_review.py`), is a draft that a named human approves, rejects or revises. Decisions are hash-chained approval events, and a draft runs only if its content still matches the approved hash. Agents can request; only humans decide.
 
 ## Tool surface
@@ -70,3 +71,5 @@ Applications use MHS the way any client does: they discover, read and invoke. Th
 ## Simulation
 
 `sim/world.py` is physical ground truth: plates, wells, volumes, concentrations, foam, plate locations and readings. Simulated instruments act on it and speak their real protocols: SiLA 2 call shapes, files on disk, E1381 frames, MLLP. The physical model is small: viscous protein above 25 ug/mL foams above 50 uL/s or with more than 3 mix cycles, bubbles add optical error, and absorbance saturates at 3.0. The reader also takes a top-view photo of the plate at each read (`sim/imaging.py`, PNG with the standard library), in which foam shows as bubbles. With liquid level detection off, that photo is the only evidence of foam. The eval invariants read the world directly.
+
+The clinical instruments carry their own ground truth for operations. The analyzer (`sim/clinical_instruments.py`) has a probe that can clog, reagent lots and calibrations, an incubator that can drift, a lamp that ages, hardware faults and a maintenance schedule; each changes what the analyzer reports and the values it measures. The CT (`sim/ct.py`) has an air calibration, a detector, a tube that must be warm, and whatever is on the table; its QA numbers and QA image follow from them. Hands-on tasks change that ground truth only when a person confirms the work.

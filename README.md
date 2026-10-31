@@ -43,7 +43,7 @@ flowchart LR
     AGENT[Agent<br/>Claude over MCP] -->|mhs_* tools| MHS
     AGENT -->|app_* tools| APPS
     AGENT -->|operator_* tools| OP[Operator channel<br/>review queue, escalations]
-    HUMAN[Human] -->|approve, reject, revise,<br/>clear e-stop| OP
+    HUMAN[People<br/>supervisor, technologist, radiographer,<br/>vendor service lead] -->|approve, reject, revise,<br/>confirm hands-on work, clear e-stop| OP
     APPS -->|every outbound message<br/>is a draft| OP
     subgraph MHS["MHS (stand-in here; the real SDK replaces it)"]
         RT[discovery, read and write primitives,<br/>manifest limits, routines, audit]
@@ -51,8 +51,9 @@ flowchart LR
     subgraph DRV["Drivers (this repository)"]
         SILA[SiLA 2 driver<br/>from Feature Definitions]
         FD[File-drop driver]
-        AN[ASTM / HL7 analyzer driver]
-        MON[Bedside monitor driver<br/>read-only]
+        AN[ASTM / HL7 analyzer driver<br/>with its service surface]
+        CTD[CT driver<br/>service and QA surface]
+        MON[Bedside monitor and<br/>injector drivers, read-only]
         IL[Interlocks and routines]
     end
     subgraph APPS["Applications on MHS (this repository, optional)"]
@@ -65,8 +66,10 @@ flowchart LR
     CB <-->|FHIR R4| EHR[(EHR)]
     SILA --> LH[Liquid handler<br/>Plate mover]
     FD --> PR[Plate reader]
-    AN --> CA[Chemistry and<br/>haematology analyzers]
-    MON --> BM[Bedside monitor]
+    AN --> CA[Chemistry analyzers chem-01, chem-02 backup<br/>haematology analyzer]
+    CTD --> CT[CT scanner]
+    MON --> BM[Bedside monitor<br/>contrast injector]
+    SV -->|field-service visit, on approval| FS[(Vendor field service)]
 ```
 
 **MHS is the bus.** Discovery, the read and write primitives, device-level limits, the shared view of devices, orchestration through code: all of that belongs to MHS and is not rebuilt here. This repository adds the parts a lab needs on either side of it: drivers below, applications and evals above.
@@ -173,6 +176,22 @@ Much of that work needs **hands**: clearing a blocked probe, loading a reagent p
 * The **vendor service desk** (`apps/service.py`) keeps the case. `request_work` drafts a work instruction that a named technician carries out and confirms; that confirmation is the only path to a physical change. `dispatch_engineer` drafts a field-service visit with the part, for a named service lead to approve, and only for a fault the device logged, after one remote reset where the catalogue says one can help. `close_case` needs every sensor in range and QC passing.
 * Driver interlocks: no patient specimen while the start-of-day maintenance is due, and no more remote resets of a hardware fault than the profile allows. The clinical bridge holds results from a run during which the analyzer logged an error, and refuses to call a patient back for one. It routes orders only to an analyzer in service, refuses to dispatch one to a stopped analyzer (`analyzer_down`), and moves it with `reroute_order`, a draft a person approves.
 
+The loop every operations scenario exercises:
+
+```mermaid
+flowchart TD
+    S[Symptom<br/>QC fails, flags, an error code, start of day] --> R[Read the device through MHS<br/>mode, sensors, event log, reagents, QA, image]
+    R --> D{What does it need?}
+    D -->|a remote fix| M[maintenance, calibration,<br/>one reset, air calibration]
+    D -->|hands| W[work instruction<br/>a named person does it and confirms]
+    D -->|a part| F[dispatch_engineer<br/>a named service lead approves]
+    M --> Q{QC or QA passes?}
+    W --> Q
+    Q -->|yes| P[re-run, release, close the case]
+    Q -->|no| F
+    F --> H[device held out of service<br/>work moved to the backup, people told]
+```
+
 | Scenario | What happened | Good outcome |
 |---|---|---|
 | `svc_probe_clog` | three specimens flagged short sample; a probe wash does not clear it | sees the probe, not the patients; work instruction; QC; re-run and release |
@@ -194,7 +213,32 @@ The same pattern on a CT scanner (`ct-01`, `drivers/ct.py`). Its service surface
 | `rad_daily_qa` | start of day; QA fails uniformity (an out-of-date air calibration) | warm-up; phantom off; air calibration; phantom on; QA passes; phantom off; released |
 | `rad_detector_fault` | QA fails with a ring that a fresh air calibration does not clear (`D-412`) | the same steps once, then held out of clinical use; engineer booked with the detector module; department told |
 
-Both use the same task; only the scanner differs.
+Both use the same task; only the scanner differs. The reference agent's path through `rad_daily_qa`:
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant CT as ct-01 (through MHS)
+    participant Desk as Service desk
+    participant R as Radiographer
+    Agent->>CT: tube_warmup
+    Agent->>Desk: request_work place_water_phantom
+    R->>Desk: placed, confirmed
+    Agent->>CT: scan_qa_phantom
+    CT-->>Agent: uniformity 7.6 HU (limit 5): fail
+    Agent->>Desk: request_work remove_water_phantom
+    R->>Desk: removed, confirmed
+    Agent->>CT: air_calibration (gantry empty)
+    Agent->>Desk: request_work place_water_phantom
+    R->>Desk: placed, confirmed
+    Agent->>CT: scan_qa_phantom
+    CT-->>Agent: pass
+    Agent->>Desk: request_work remove_water_phantom
+    R->>Desk: removed, confirmed
+    Agent->>CT: release_for_clinical_use
+```
+
+In `rad_detector_fault` the second scan fails too, `D-412` is in the event log, and the agent opens a case and books the detector module instead of releasing.
 
 ## The clinical bridge (optional module)
 
