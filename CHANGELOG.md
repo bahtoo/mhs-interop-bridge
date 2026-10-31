@@ -4,6 +4,26 @@ Versions follow semantic versioning.
 
 ## [Unreleased]
 
+### Device operations (the vendor service desk)
+Hospital devices are already connected to the LIS and the EHR; what still takes people and downtime is operating them. This starts on that gap, from the device vendor's remote service desk.
+
+- The simulated analyzer has an operating state: sensors with normal ranges, an event log with vendor codes (`E-217` aspiration, `E-405` calibration), reagents on board, calibrations, remote maintenance (`run_maintenance`, `calibrate`) and hands-on tasks that only a person can do. Faults `probe_clog` (soft: a wash clears it; hard: it needs hands) and `new_lot`.
+- `apps/service.py`, the vendor service desk: service cases with a diagnostics bundle, `request_work` (a `work_instruction` draft a named technician carries out and confirms; the only path to a physical change), and `close_case`, which needs sensors in range and passing QC.
+- The specimen-quarantine interlock lets a tube be re-run when the analyzer's own log shows it caused the flag and has recovered. The clinical bridge refuses a recollection (`instrument_suspected`) when the analyzer logged an error during that run.
+- Scenarios `svc_probe_clog` and `svc_reagent_lot` (27 scenarios). Invariants O1 (no result released from a run during a fault), O2 (no patient called back for the analyzer's fault) and O4 (every hands-on change confirmed by a person). `mhs-bridge demo service`.
+- An incubator drift (`incubator_drift`, vendor code `E-310`), a hardware fault (`hw_fault`, `E-612`), and the start of day (`start_of_day`, `reagent_empty`). The analyzer adds `mode`, `maintenance_schedule`, `field_service` and the remote procedure `reset_analyzer`; the hands-on task `load_reagent_pack` loads the next lot, which then needs a calibration.
+- `dispatch_engineer` in the service desk: a `field_service` draft for a named service lead, only with the part for a fault the device logged, and only after one remote reset where the catalogue says a reset can clear it. `request_work` no longer needs a case, for the hospital's own bench work.
+- Driver interlocks `maintenance_due` (no patient specimen before the start-of-day maintenance) and `reset_limit`. The clinical bridge gate `instrument_fault` holds results from a run during which the analyzer logged an error.
+- Scenarios `svc_temp_drift`, `svc_needs_part` and `lab_daily_start` (30 scenarios). Invariants O3 (no patient run with maintenance due) and O5 (at most two resets of a hardware fault); O1 covers the drift.
+- Docs: the clinical bridge is described as the existing hospital integration, simulated so operations have consequences. The README has a Device operations section and a row in the MHS mapping.
+- A backup analyzer: `chem-02`, a second ChemPro 900 from the same profile (`also_installed`). Fault `lamp_aging` (`W-611`, lamp hours past the rated life: every result reads low, and calibration fails).
+- Routing skips an analyzer stopped on a fault. `dispatch_order` refuses an order routed to one (`analyzer_down`), and `reroute_order`, a new `lis_reroute` draft, moves it to analyzers in service when a person approves.
+- Scenarios `svc_lamp_drift` and `lab_downtime` (32 scenarios). Invariant O6 (no order sent to a stopped analyzer).
+- Radiology: a CT scanner (`ct-01`, `drivers/ct.py`, `sim/ct.py`) with sensors, an event log, the gantry, daily QA on a water phantom and the QA image; `tube_warmup`, `air_calibration`, `scan_qa_phantom`, `release_for_clinical_use`; hands-on `place_water_phantom` and `remove_water_phantom`. Interlocks `tube_cold`, `gantry_not_clear`, `no_phantom`, `qa_not_passed`. Faults `start_of_day`, `air_cal_stale`, `detector_fault` (`D-412`). A contrast injector (`inj-01`), `patient_connected`. Risk class `patient_exposing`.
+- The service desk works for the CT: its diagnostics bundle reads the states a device has, and a case closes on the CT's daily QA.
+- Scenarios `rad_daily_qa` and `rad_detector_fault` (34 scenarios). Invariants R1 (no release with a fault), R2 (no air calibration with anything in the gantry), R3 (no exposure on a cold tube). `mhs-bridge demo radiology`.
+- 118 tests. Scripted: naive 6/34, 167 blocked, 0 violations; reference 34/34; naive with guardrails off 1/34, 116 violations. Results for the earlier 32 scenarios are unchanged.
+
 Tests for physical inference rather than rule-following, after a review of where the POC stands against the MHS announcement.
 
 ### Added

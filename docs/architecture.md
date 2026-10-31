@@ -30,6 +30,7 @@ Domain rules are deliberately absent from the stand-in. Whether a clinical resul
 | `drivers/filedrop.py` | command file in, CSV export and status file out | a device profile | plate presence from the status file |
 | `drivers/analyzer.py` | ASTM E1381/E1394 or HL7 v2 (OUL^R22, OML^O33) | a dialect profile | specimen quarantine after a physical flag |
 | `drivers/monitor.py` | HL7 v2 ORU^R01, IEEE 11073 terms | a dialect profile | none needed: no procedures, `patient_connected` |
+| `drivers/ct.py` | the CT vendor's service and QA surface (images go to PACS over DICOM, outside it) | a device profile | cold tube, gantry not clear, no phantom, release without a QA pass; the injector is `patient_connected` |
 
 ### The SiLA 2 split
 

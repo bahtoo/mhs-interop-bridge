@@ -7,7 +7,19 @@ results (LOINC, UCUM, canonical conditions), and exposes the analyzer to MHS
 as states and procedures.
 
 Driver interlock: a specimen whose last results carry a physical condition
-(foam, clot, short sample) cannot be run again from the same cup.
+(foam, clot, short sample) cannot be run again from the same cup, unless the
+analyzer's own event log shows that it caused the condition during that run
+(an aspiration error) and the fault has since cleared. Then the tube was never
+the problem, and re-running it is the right thing to do.
+
+Operations: when the profile has an ``operations`` section, the analyzer also
+exposes what its vendor's remote service works with: sensors with their normal
+ranges, the event log, reagents on board, calibrations, the maintenance
+schedule, and remote maintenance, calibration and reset. Hands-on tasks are
+listed, never invocable: a person does them.
+
+Two more interlocks: no patient specimen while the start-of-day maintenance is
+due, and no more remote resets of a hardware fault than the profile's limit.
 """
 
 from __future__ import annotations
@@ -49,7 +61,7 @@ class AnalyzerDriver:
              State("worklist", "object", "orders downloaded to the analyzer, by specimen barcode"),
              State("results:<specimen_id>", "list", "canonical results for a specimen"),
              State("qc_targets", "object", "QC material targets per test and level (mean, sd) in vendor units"),
-             State("qc_history:<test>", "list", "every QC run for a test, oldest first")],
+             State("qc_history:<test>", "list", "every QC run for a test, oldest first")] + self._ops_states(),
             [Procedure("download_order", "Send an order to the analyzer's worklist in its own protocol.",
                        [Param("specimen_id", "string", "specimen barcode"), Param("patient_id", "string", "patient id"),
                         Param("tests", "list of string", f"vendor test codes, subset of {tests}"),
@@ -65,8 +77,48 @@ class AnalyzerDriver:
                        [Param("specimen_id", "string", "specimen barcode"),
                         Param("tests", "list of string", f"vendor test codes, subset of {tests}")],
                        errors={"ASTM_SESSION_ABORTED": "frame NAKed six times; no results were received"},
-                       safety_checks=["a specimen with a physical condition cannot be re-run from the same cup"])],
+                       safety_checks=["a specimen with a physical condition cannot be re-run from the same cup, "
+                                      "unless the analyzer logged that it caused the condition and has recovered"])]
+            + self._ops_procedures(),
             self.profile.tags, self.profile.data.get("risk_class", ""), driver="analyzer")
+
+    @property
+    def ops(self) -> dict:
+        return self.profile.data.get("operations", {})
+
+    def _ops_states(self) -> list[State]:
+        if not self.ops:
+            return []
+        return [State("mode", "object", "ready, or error with the vendor code that stopped the analyzer"),
+                State("sensors", "object", "sensor readings with their normal ranges"),
+                State("event_log", "list", "the instrument's event log: vendor codes, newest last"),
+                State("error_codes", "object", "what each vendor event code means"),
+                State("reagents", "object", "reagent packs on board: lot, tests left, expiry"),
+                State("calibration:<test>", "object", "the calibration in use for a test: lot, valid until"),
+                State("maintenance_tasks", "object", "remote tasks (run_maintenance) and hands-on tasks (a person "
+                                                     "at the instrument does them; request a work instruction)"),
+                State("maintenance_schedule", "object", "scheduled maintenance: interval and whether it is due"),
+                State("field_service", "object", "faults that need a field engineer, the part, and whether a "
+                                                 "remote reset should be tried first")]
+
+    def _ops_procedures(self) -> list[Procedure]:
+        if not self.ops:
+            return []
+        tests = ", ".join(self.profile.tests)
+        return [Procedure("run_maintenance", "Run a remote maintenance task on the analyzer.",
+                          [Param("task", "string", "remote task", allowed=list(self.ops.get("remote_tasks", {})))]),
+                Procedure("calibrate", "Calibrate a test with the calibrator on board, against the reagent lot in use.",
+                          [Param("test", "string", f"vendor test code, one of {tests}")],
+                          errors={"E-405": "calibration failed; see the event log"}),
+                Procedure("reset_analyzer", "Remote reset of the analyzer's controller. Clears a transient fault; a "
+                          "hardware fault comes back.", [],
+                          safety_checks=[f"at most {self.ops.get('reset_limit', 2)} resets of a hardware fault"])]
+
+    def perform_by_hand(self, task: str, by: str) -> dict:
+        """Not a procedure: a person at the instrument did ``task``, as its own maintenance screen records it."""
+        if task not in self.ops.get("hands_on_tasks", {}):
+            return {"status": "error", "error": "UNKNOWN_TASK", "detail": task}
+        return self.instrument.perform_by_hand(task, by)
 
     def read(self, state: str) -> Any:
         if state == "status":
@@ -83,15 +135,54 @@ class AnalyzerDriver:
             return self.profile.data.get("qc", {})
         if state.startswith("qc_history:"):
             return self.qc_history.get(state.split(":", 1)[1], [])
+        if self.ops:
+            if state == "mode":
+                return self.instrument.mode()
+            if state == "maintenance_schedule":
+                return self.instrument.schedule()
+            if state == "field_service":
+                return self.ops.get("field_service", {})
+            if state == "sensors":
+                return self.instrument.sensors()
+            if state == "event_log":
+                return self.instrument.events[-20:]
+            if state == "error_codes":
+                return self.ops.get("error_codes", {})
+            if state == "reagents":
+                return self.instrument.reagents
+            if state.startswith("calibration:"):
+                return self.instrument.calibration[state.split(":", 1)[1]]
+            if state == "maintenance_tasks":
+                return {"remote": self.ops.get("remote_tasks", {}), "hands_on": self.ops.get("hands_on_tasks", {})}
         raise KeyError(state)
+
+    def _caused_by_instrument(self, specimen: str) -> bool:
+        """The analyzer logged an aspiration error on this specimen's last run, and pressure is back to normal."""
+        ids = {r.vendor_raw.get("message_id") for r in self.results.get(specimen, [])}
+        logged = any(e["code"] == "E-217" and e.get("message_id") in ids for e in self.instrument.events)
+        p = self.instrument.sensors().get("probe_pressure_kpa")
+        recovered = p is not None and p["normal"][0] <= p["value"] <= p["normal"][1]
+        return logged and recovered
 
     def precheck(self, procedure: str, args: dict):
         if procedure == "run_specimen":
             conditions = sorted({c for r in self.results.get(args["specimen_id"], []) for c in r.conditions})
-            if conditions:
+            if conditions and not self._caused_by_instrument(args["specimen_id"]):
                 return Decision.block("specimen_quarantine",
                                       f"specimen {args['specimen_id']} showed {conditions}; re-running the same cup "
                                       "is not allowed", PHYSICAL_HINT)
+            if self.instrument.due:
+                return Decision.block("maintenance_due", f"start-of-day maintenance is due on {self.device_id}: "
+                                      f"{sorted(self.instrument.due)}",
+                                      "Run the due maintenance, check the reagent packs and pass QC before patient "
+                                      "specimens.")
+        if procedure == "reset_analyzer" and self.instrument.hw_fault:
+            limit = self.ops.get("reset_limit", 2)
+            if self.instrument.resets >= limit:
+                return Decision.block("reset_limit", f"{self.device_id} has been reset {self.instrument.resets} "
+                                      f"times on {self.instrument.hw_fault}",
+                                      "The fault is not transient. Open a service case and dispatch a field engineer "
+                                      "with the part; more resets wear the analyzer and lose its logs.")
         return None
 
     def write(self, procedure: str, args: dict) -> dict:
@@ -103,6 +194,14 @@ class AnalyzerDriver:
             return self._run(f"QC-{args['test']}-{args['level']}", [args["test"]])
         if procedure == "run_specimen":
             return self._run(args["specimen_id"], list(args["tests"]))
+        if procedure == "run_maintenance":
+            return self.instrument.maintenance(args["task"])
+        if procedure == "calibrate":
+            if args["test"] not in self.profile.tests:
+                return {"status": "error", "error": "UNKNOWN_TEST", "detail": args["test"]}
+            return self.instrument.calibrate(args["test"])
+        if procedure == "reset_analyzer":
+            return self.instrument.reset()
         raise KeyError(procedure)
 
     # --- wire ------------------------------------------------------------------
@@ -131,7 +230,11 @@ class AnalyzerDriver:
         unknown = [t for t in tests if t not in self.profile.tests]
         if unknown:
             return {"status": "error", "error": "UNKNOWN_TEST", "detail": f"analyzer does not offer {unknown}"}
-        message = self.instrument.result_message(specimen, tests, f"MSG{next(self._ctl):05d}")
+        refused = self.instrument.begin_run(specimen, tests)
+        if refused:
+            return refused
+        message_id = f"MSG{next(self._ctl):05d}"
+        message = self.instrument.result_message(specimen, tests, message_id)
         if self.profile.protocol == "astm":
             message = self._astm_session(message)
             if message is None:
@@ -145,6 +248,7 @@ class AnalyzerDriver:
         results = normalise(self.profile, message)
         for r in results:
             r.result_id = f"{self.device_id}-{r.result_id}"
+            r.vendor_raw["message_id"] = message_id
             order = self.instrument.worklist.get(specimen)
             r.order_id = order.get("order_id", "") if order else ""
         if specimen.startswith("QC-"):

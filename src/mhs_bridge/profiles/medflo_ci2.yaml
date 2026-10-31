@@ -1,0 +1,13 @@
+# Device profile: CT contrast injector, read-only status.
+# Fictional vendor and model.
+profile_version: "0.1.0"
+device_id: inj-01
+vendor: Medflo (fictional)
+model: CI-2
+device_type: contrast_injector
+protocol: vendor_service
+risk_class: patient_connected     # agents may read; no procedure can be invoked on this device
+
+tags:
+  - "This is a patient-connected device: it injects contrast into a patient's vein. Agents may read it; no procedure can be invoked on it."
+  - "Arming, filling and injecting are done at the injector by the radiographer, never remotely."

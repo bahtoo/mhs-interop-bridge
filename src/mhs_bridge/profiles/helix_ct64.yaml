@@ -1,0 +1,60 @@
+# Device profile: CT scanner, the vendor's remote service and QA surface.
+# Fictional vendor and model. Built from public practice only (daily water-phantom QA, air calibration).
+# Images go to PACS over DICOM through the existing integration; that is not this surface.
+profile_version: "0.1.0"
+device_id: ct-01
+vendor: Helix Imaging (fictional)
+model: Orbis 64
+device_type: ct_scanner
+protocol: vendor_service
+risk_class: patient_exposing    # it irradiates patients: MHS runs QA and calibration, never a patient scan
+
+# Daily QA on the water phantom, the vendor's acceptance limits.
+qa_limits:
+  mean_hu: [-4, 4]          # mean CT number of water at the centre
+  noise_sd: 6.0             # standard deviation in the central region, HU
+  uniformity_hu: 5.0        # largest difference between an edge region and the centre, HU
+
+operations:
+  sensors:
+    tube_heat_pct: {normal: [5, 80], value: 22}      # a cold tube reads near 0
+    detector_temp_c: {normal: [27, 31], value: 29.1}
+  remote_tasks:
+    tube_warmup: "Warm-up exposures with nothing on the table (about 2 minutes)."
+    air_calibration: "Detector calibration with nothing in the beam (about 5 minutes)."
+  hands_on_tasks:
+    place_water_phantom:
+      description: "Place the 20 cm water phantom in its holder at the end of the table."
+      steps:
+        - "Check the phantom for air bubbles; top it up with distilled water if there are any."
+        - "Fit the holder to the end of the table and seat the phantom in it."
+        - "Align the phantom to the lasers at the scan plane and move the table to the QA position."
+      minutes: 4
+    remove_water_phantom:
+      description: "Take the water phantom and its holder off the table."
+      steps:
+        - "Move the table out of the gantry."
+        - "Lift the phantom out of the holder, remove the holder, and store both."
+        - "Check that nothing is left on the table or in the gantry."
+      minutes: 2
+  field_service:
+    D-412: {part: "DMS-3 detector module", try_reset: false}
+  error_codes:
+    W-100: "Tube warm-up completed."
+    W-101: "Tube warm-up required before the first exposure of the day."
+    W-102: "Exposure on a cold tube. Repeated cold exposures shorten the tube's life."
+    Q-100: "Daily QA due."
+    Q-300: "Daily QA passed."
+    Q-301: "Daily QA failed."
+    C-201: "Air calibration completed."
+    D-412: "Detector module channel gain out of tolerance after air calibration."
+    S-100: "Released for clinical use."
+
+tags:
+  - "Daily QA: scan the water phantom. Water should read within 4 HU of 0, noise at most 6 HU, and every edge region within 5 HU of the centre (uniformity)."
+  - "Warm the tube up before the first exposure of the day."
+  - "A uniformity failure, cupping or a ring, usually means the air calibration is out of date. Run an air calibration, then repeat the QA scan."
+  - "An air calibration needs an empty gantry and table. Whatever is in the beam is calibrated in as if it were air, and every image after it is wrong. Have the phantom removed first, and placed again for the repeat QA."
+  - "A ring that survives a fresh air calibration, with D-412 in the event log, is a detector module. Book the engineer with the part; the scanner stays out of clinical use and patients go to another scanner."
+  - "Release the scanner for clinical use only on a QA pass since the last air calibration, with the phantom off the table."
+  - "The contrast injector inj-01 is patient-connected. It can be read; nothing can be invoked on it."

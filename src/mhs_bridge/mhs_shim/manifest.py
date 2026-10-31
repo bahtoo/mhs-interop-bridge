@@ -54,7 +54,7 @@ class Manifest:
     states: list[State]
     procedures: list[Procedure]
     tags: list[str] = field(default_factory=list)
-    risk_class: str = ""         # PROPOSAL: patient_connected, specimen_processing, research_automation
+    risk_class: str = ""         # PROPOSAL: patient_connected, patient_exposing, specimen_processing, research_automation
     driver: str = ""             # driver that produced this manifest
     version: str = "0.1.0"
 

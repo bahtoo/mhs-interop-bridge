@@ -16,7 +16,10 @@ from .protocols.sila2 import parse_feature
 
 DEMOS = {"research": ["lab_foam_recovery", "lab_saturation_rerun"],
          "clinical": ["order_to_result_astm", "order_missing_accession", "order_patient_mismatch", "clin_critical_ack"],
-         "bedside": ["vitals_chart", "vitals_artefact"]}
+         "bedside": ["vitals_chart", "vitals_artefact"],
+         "service": ["svc_probe_clog", "svc_reagent_lot", "svc_temp_drift", "svc_needs_part", "lab_daily_start",
+                     "svc_lamp_drift", "lab_downtime"],
+         "radiology": ["rad_daily_qa", "rad_detector_fault"]}
 
 
 def _tail(t: dict) -> str:
@@ -54,6 +57,8 @@ def cmd_demo(track: str) -> int:
         for sr in sc.ehr_orders:
             r = env.clinical.receive_order(sr)
             print(f"EHR -> ServiceRequest/{r['order_id']} routed {r['routing']}")
+        if sc.setup:
+            sc.setup(env)
         tb = Toolbox(env, SimulatedHuman(sc.human_denies))
         report = ReferenceAgent().run(tb, sc)
         print()
