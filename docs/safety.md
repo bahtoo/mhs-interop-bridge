@@ -37,7 +37,7 @@ Devices also refuse on their own, through defined errors: `DestinationUnavailabl
 | clinical | `unroutable`, `already_dispatched` | order cannot be, or has been, dispatched |
 | clinical | `vitals_held`, `already_charted` | artefact, lead-off, unassociated monitor, or already charted |
 | clinical | `data_exception` | the order has an unresolved data exception, such as a missing accession |
-| clinical | needs approval | every procedure: `dispatch_order`, `release_results`, `request_recollection`, `request_critical_callback`, `chart_vitals`, `propose_resolution` |
+| clinical | needs approval | every procedure: `dispatch_order`, `reroute_order`, `release_results`, `request_recollection`, `request_critical_callback`, `chart_vitals`, `propose_resolution` |
 
 ## 4. Operator channel
 

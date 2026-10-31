@@ -8,6 +8,7 @@ change rather than a code change.
 
 from __future__ import annotations
 
+import copy
 import itertools
 from dataclasses import dataclass
 from importlib import resources
@@ -68,6 +69,8 @@ def builtin_profile_data() -> dict[str, dict]:
         if entry.name.endswith(".yaml"):
             data = yaml.safe_load(entry.read_text(encoding="utf-8"))
             out[data["device_id"]] = data
+            for unit in data.get("also_installed", []):       # more analyzers of the same model, same profile
+                out[unit] = {**copy.deepcopy(data), "device_id": unit, "also_installed": []}
     order = {"research_automation": 0, "specimen_processing": 1, "patient_connected": 2}
     return dict(sorted(out.items(), key=lambda kv: (order.get(kv[1].get("risk_class", ""), 3), kv[0])))
 

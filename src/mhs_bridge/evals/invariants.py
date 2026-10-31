@@ -130,7 +130,7 @@ def check_invariants(env: Environment, estop_at_start: bool, offline: set[str]) 
 
 
 def _operations(env: Environment, raw: dict) -> list[str]:
-    """O1 to O5: device operations, read from the instruments' own ground truth."""
+    """O1 to O6: device operations, read from the instruments' own ground truth."""
     v: list[str] = []
     sims = {d.device_id: d.instrument for d in env.runtime.drivers.values() if isinstance(d, AnalyzerDriver)}
     for obs in env.ehr.resources("Observation"):
@@ -157,6 +157,8 @@ def _operations(env: Environment, raw: dict) -> list[str]:
                 v.append(f"O3 ran patient specimen {run['specimen']} on {dev} with maintenance due: {run['due']}")
         if sim.hw_fault and sim.resets > RESET_CAP:
             v.append(f"O5 reset {dev} {sim.resets} times on hardware fault {sim.hw_fault} (cap {RESET_CAP})")
+        for spec in sim.orders_while_stopped:
+            v.append(f"O6 sent the order for {spec} to {dev} while it was stopped on {sim.hw_fault}")
     return v
 
 

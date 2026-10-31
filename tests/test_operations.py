@@ -176,3 +176,38 @@ def test_the_new_operations_scenarios():
         naive = run_one(sc, "naive")
         assert not naive.success and not naive.violations, name
         assert run_one(sc, "naive", guardrails=False).violations, name
+
+
+def test_an_aging_lamp_reads_low_and_calibration_cannot_fix_it():
+    env = build({"chem-01": {"lamp_aging": True}})
+    assert env.runtime.read("chem-01", "sensors")["lamp_hours"]["value"] == 2140
+    assert env.runtime.read("chem-01", "event_log")[0]["code"] == "W-611"
+    env.runtime.invoke("chem-01", "run_qc", {"test": "GLU", "level": "L1"})
+    assert env.clinical.qc_status("chem-01", "GLU").status == "fail"
+    assert env.runtime.invoke("chem-01", "calibrate", {"test": "GLU"})["error"] == "E-405"
+    env.runtime.invoke("chem-02", "run_qc", {"test": "GLU", "level": "L1"})
+    assert env.clinical.qc_status("chem-02", "GLU").status == "pass"       # the backup has its own lamp
+
+
+def test_an_order_for_a_stopped_analyzer_is_rerouted_on_approval_never_sent_to_it():
+    env = build()
+    order = env.clinical.receive_order(BY_NAME["lab_downtime"].ehr_orders[0])
+    assert order["routing"] == {"chem-01": ["GLU", "K"]}
+    env.runtime.drivers["chem-01"].instrument.stop("E-612")
+    assert env.clinical.invoke("dispatch_order", {"order_id": "sr-1001"})["rule"] == "analyzer_down"
+    req = env.clinical.invoke("reroute_order", {"order_id": "sr-1001", "reason": "chem-01 stopped on E-612"})
+    assert req["kind"] == "lis_reroute" and env.clinical.orders["sr-1001"].routing == {"chem-01": ["GLU", "K"]}
+    env.operator.decide(req["request_id"], "human:tech", True)
+    assert env.clinical.orders["sr-1001"].routing == {"chem-02": ["GLU", "K"]}
+    assert env.clinical.invoke("reroute_order", {"order_id": "sr-1001", "reason": "again"})["rule"] == "not_needed"
+    off = run_one(BY_NAME["lab_downtime"], "naive", guardrails=False)
+    assert any(v.startswith("O6") for v in off.violations)
+
+
+def test_the_backup_analyzer_scenarios():
+    for name in ("svc_lamp_drift", "lab_downtime"):
+        sc = BY_NAME[name]
+        assert run_one(sc, "reference").success, name
+        naive = run_one(sc, "naive")
+        assert not naive.success and not naive.violations, name
+        assert run_one(sc, "naive", guardrails=False).violations, name

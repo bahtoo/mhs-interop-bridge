@@ -15,7 +15,8 @@ short-circuiting a decoder:
               new_lot {test: lot} (a reagent lot loaded whose calibration has not been run),
               incubator_drift {after: specimen, value: degrees C} (the incubator drifts once that specimen has run),
               hw_fault (a vendor code such as "E-612": the analyzer stops, and a reset does not clear it),
-              start_of_day (the daily and weekly maintenance is due), reagent_empty (tests whose pack is empty)
+              start_of_day (the daily and weekly maintenance is due), reagent_empty (tests whose pack is empty),
+              lamp_aging (the photometer lamp is past its rated hours: every result reads low)
 
 The analyzer also has an operating state, the part its vendor's remote service
 works with: sensors, an event log with vendor error codes, reagents on board,
@@ -38,6 +39,8 @@ CLOG_PRESSURE_KPA = -62.0
 CLOG_QC_FACTOR = 0.6          # a blocked probe aspirates too little
 LOT_BIAS = 1.12               # a new lot read against the old lot's calibration
 TEMP_BIAS = 1.10              # reaction rates at the wrong incubator temperature
+LAMP_FACTOR = 0.90            # a weak lamp: less light through the cuvette, every absorbance reads low
+LAMP_HOURS_AGED = 2140
 NORMAL_VALUES = {"GLU": 5.2, "K": 4.2, "WBC": 7.1, "HGB": 140.0, "PLT": 250.0}
 CRITICAL_VALUES = {"GLU": 33.0, "K": 6.9, "WBC": 0.9, "HGB": 55.0, "PLT": 12.0}
 TS = "20261019101500"
@@ -61,15 +64,19 @@ class SimAnalyzer:
         self.drift = dict(self.faults.get("incubator_drift", {}))
         self.drifting = False
         self.hw_fault = self.faults.get("hw_fault", "")
+        self.lamp_aging = bool(self.faults.get("lamp_aging"))
         self.resets = 0
         self.due = set(ops.get("schedule", {})) if self.faults.get("start_of_day") else set()
         self.events: list[dict] = []
         self.run_log: dict[str, dict] = {}              # message id -> {specimen, physical faults active during it}
         self.patient_runs: list[dict] = []              # every patient run started, with the maintenance due then
         self.hands_on: list[dict] = []                  # work a person did at the instrument
+        self.orders_while_stopped: list[str] = []       # specimens whose order reached it while it was stopped
         self._event_seq = itertools.count(1)
         if self.hw_fault:
             self._event(self.hw_fault, "analyzer stopped on a hardware fault")
+        if self.lamp_aging:
+            self._event("W-611", f"photometer lamp energy low at {LAMP_HOURS_AGED} hours")
 
     @property
     def online(self) -> bool:
@@ -88,11 +95,18 @@ class SimAnalyzer:
                 value = CLOG_PRESSURE_KPA
             if name == "incubator_c" and self.drifting:
                 value = self.drift["value"]
+            if name == "lamp_hours" and self.lamp_aging:
+                value = LAMP_HOURS_AGED
             out[name] = {"value": value, "normal": spec["normal"]}
         return out
 
     def mode(self) -> dict:
         return {"mode": "error", "code": self.hw_fault} if self.hw_fault else {"mode": "ready", "code": ""}
+
+    def stop(self, code: str) -> None:
+        """A hardware fault during the day (scenario setup): the analyzer stops."""
+        self.hw_fault = code
+        self._event(code, "analyzer stopped on a hardware fault")
 
     def schedule(self) -> dict:
         return {task: {"interval": every, "due": task in self.due}
@@ -103,6 +117,7 @@ class SimAnalyzer:
 
     def active_faults(self, tests: list[str]) -> list[str]:
         return ((["probe_clog"] if self.clog else []) + (["incubator_drift"] if self.drifting else [])
+                + (["lamp_aging"] if self.lamp_aging else [])
                 + [f"uncalibrated_lot:{t}" for t in tests if self.lot_mismatch(t)])
 
     def begin_run(self, specimen: str, tests: list[str]) -> dict | None:
@@ -142,6 +157,9 @@ class SimAnalyzer:
         if self.clog:
             self._event("E-405", f"calibration failed for {test}: aspiration", test=test)
             return {"status": "error", "error": "E-405", "detail": f"calibration of {test} failed: aspiration"}
+        if self.lamp_aging:
+            self._event("E-405", f"calibration failed for {test}: photometer signal low", test=test)
+            return {"status": "error", "error": "E-405", "detail": f"calibration of {test} failed: signal low"}
         self.calibration[test] = {**self.calibration.get(test, {}), "lot": self.reagents[test]["lot"],
                                   "valid_until": "2026-12-01"}
         self._event("C-100", f"calibration accepted for {test} lot {self.reagents[test]['lot']}", test=test)
@@ -168,6 +186,8 @@ class SimAnalyzer:
         else:
             entry = lis_orders.decode_oml_o33(message)
         self.worklist[entry["specimen_id"]] = entry
+        if self.hw_fault:
+            self.orders_while_stopped.append(entry["specimen_id"])
         return entry
 
     # --- instrument to host --------------------------------------------------
@@ -198,7 +218,7 @@ class SimAnalyzer:
 
     def _physical_factor(self, code: str) -> float:
         return ((CLOG_QC_FACTOR if self.clog else 1.0) * (LOT_BIAS if self.lot_mismatch(code) else 1.0)
-                * (TEMP_BIAS if self.drifting else 1.0))
+                * (TEMP_BIAS if self.drifting else 1.0) * (LAMP_FACTOR if self.lamp_aging else 1.0))
 
     def _flags(self, specimen: str) -> list[str]:
         to_vendor = {v: k for k, v in self.profile.data.get("condition_flags", {}).items()}

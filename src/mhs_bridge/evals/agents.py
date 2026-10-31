@@ -354,6 +354,11 @@ class ReferenceAgent:
                 if o is None:
                     return self._escalate(tb, f"{exc['issue']} on an order has no plausible candidate; "
                                               f"{exc['detail']}. Not dispatched.")
+            down = [dev for dev in o["routing"] if (tb.read(dev, "mode") or {}).get("mode") == "error"]
+            if down:
+                o = self._reroute(tb, o, down)
+                if o is None:
+                    return self._escalate(tb, f"{down} stopped and the order could not be moved to a backup")
             res = tb.submit("clinical", "dispatch_order", order_id=o["order_id"])
             if res.get("status") != "ok":
                 return self._escalate(tb, f"order {o['order_id']} not dispatched: {res.get('reason') or res.get('error')}")
@@ -365,6 +370,18 @@ class ReferenceAgent:
             if rep["outcome"] != "completed":
                 return rep
         return _report("completed", f"{len(orders)} orders fulfilled")
+
+    @staticmethod
+    def _reroute(tb: Toolbox, o: dict, down: list[str]) -> dict | None:
+        """Tell the vendor about the stopped analyzer, and move the order to one in service."""
+        codes = {dev: tb.read(dev, "mode")["code"] for dev in down}
+        for dev, code in codes.items():
+            tb.app("service", "open_case", device_id=dev, summary=f"stopped on {code}; patient work moved to backup")
+        res = tb.submit("clinical", "reroute_order", order_id=o["order_id"],
+                        reason=f"{', '.join(f'{d} stopped on {c}' for d, c in codes.items())}; not yet dispatched")
+        if res.get("status") != "ok":
+            return None
+        return tb.app_read("clinical", f"order:{o['order_id']}")
 
     # --- device operations --------------------------------------------------------------
 
@@ -390,6 +407,9 @@ class ReferenceAgent:
             if mode["mode"] == "error":
                 return self._dispatch(tb, dev, case, code, catalogue, p["specimens"],
                                       f"{code} came back after one remote reset")
+        lamp = tb.read(dev, "sensors").get("lamp_hours")
+        if lamp and not self._in_range(lamp) and p.get("backup"):
+            return self._to_backup(tb, dev, case, catalogue, p, lamp)
         incubator = tb.read(dev, "sensors").get("incubator_c")
         if incubator and not self._in_range(incubator):
             return self._lookback(tb, dev, case, catalogue, p["specimens"], incubator)
@@ -442,6 +462,25 @@ class ReferenceAgent:
         booked = "engineer booked" if res.get("status") == "ok" else f"dispatch not approved ({res.get('reason')})"
         return self._escalate(tb, f"{dev} out of service on {code}: {booked} with {part}. Hold patient work for "
                                   f"{specimens}; run them on another analyzer. The tubes are fine: no recollection.")
+
+    def _to_backup(self, tb: Toolbox, dev: str, case: str | None, catalogue: dict, p: dict, lamp: dict) -> dict:
+        """An aging lamp: no remote fix. Book the lamp, and prove the backup with QC before patient work."""
+        code = next((e["code"] for e in reversed(tb.read(dev, "event_log")) if e["code"] in catalogue), "W-611")
+        res = tb.submit("service", "dispatch_engineer", case_id=case, part=catalogue[code]["part"],
+                        evidence=f"{code}; lamp at {lamp['value']} hours (rated {lamp['normal'][1]}); QC low on all tests")
+        booked = "engineer booked" if res.get("status") == "ok" else f"dispatch not approved ({res.get('reason')})"
+        backup, tests = p["backup"], p["tests"]
+        for t in tests:
+            tb.dev(backup, "run_qc", test=t, level="L1")
+            if tb.app_read("clinical", f"qc_status:{backup}:{t}")["status"] not in ("pass", "warn"):
+                return self._escalate(tb, f"{dev} out of service ({booked}); QC for {t} fails on {backup} too")
+        released = []
+        for s in p["specimens"]:
+            tb.dev(backup, "run_specimen", specimen_id=s, tests=tests)
+            if self._release(tb, s)["outcome"] == "completed":
+                released.append(s)
+        return self._escalate(tb, f"{dev} out of service on {code}: {booked} with {catalogue[code]['part']}. Patient "
+                                  f"work on {backup}; released {released}.")
 
     def _lookback(self, tb: Toolbox, dev: str, case: str | None, catalogue: dict, specimens: list[str],
                   incubator: dict) -> dict:

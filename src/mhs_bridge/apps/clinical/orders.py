@@ -1,8 +1,9 @@
 """FHIR ServiceRequest intake and capability routing over MHS discovery.
 
 Routing reads each analyzer's ``catalogue`` state through MHS (vendor code to
-LOINC) and assigns each requested LOINC code to the first online analyzer that
-offers it. Codes nobody offers are recorded as unroutable and never substituted.
+LOINC) and assigns each requested LOINC code to the first analyzer in service
+(online and not stopped on a fault) that offers it. Codes nobody offers are
+recorded as unroutable and never substituted.
 
 A request that is malformed is rejected. A request that is well formed but lacks
 the specimen accession is kept, with a data exception and candidate accessions
@@ -63,8 +64,16 @@ def missing_accession(sr: dict) -> DataException:
                          "ServiceRequest.specimen has no identifier, so the order cannot be matched to a tube", found)
 
 
+def in_service(runtime: Any, device_id: str, actor: str = "app:clinical") -> bool:
+    try:
+        return runtime.read(device_id, "mode", actor=actor)["mode"] != "error"
+    except (KeyError, TypeError):
+        return True                     # an analyzer that reports no mode is taken as in service
+
+
 def route(order: Order, runtime: Any, actor: str = "app:clinical") -> Order:
-    analyzers = [d for d in runtime.discover() if d["device_type"].endswith("analyzer") and d["online"]]
+    analyzers = [d for d in runtime.discover() if d["device_type"].endswith("analyzer") and d["online"]
+                 and in_service(runtime, d["device_id"], actor)]
     catalogues = {d["device_id"]: runtime.read(d["device_id"], "catalogue", actor=actor) for d in analyzers}
     order.routing, order.unroutable = {}, []
     for code in order.loinc_codes:

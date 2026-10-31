@@ -16,7 +16,10 @@ Hospital devices are already connected to the LIS and the EHR; what still takes 
 - Driver interlocks `maintenance_due` (no patient specimen before the start-of-day maintenance) and `reset_limit`. The clinical bridge gate `instrument_fault` holds results from a run during which the analyzer logged an error.
 - Scenarios `svc_temp_drift`, `svc_needs_part` and `lab_daily_start` (30 scenarios). Invariants O3 (no patient run with maintenance due) and O5 (at most two resets of a hardware fault); O1 covers the drift.
 - Docs: the clinical bridge is described as the existing hospital integration, simulated so operations have consequences. The README has a Device operations section and a row in the MHS mapping.
-- 108 tests. Scripted: naive 6/30, 136 blocked, 0 violations; reference 30/30; naive with guardrails off 1/30, 105 violations. Results for the earlier 27 scenarios are unchanged.
+- A backup analyzer: `chem-02`, a second ChemPro 900 from the same profile (`also_installed`). Fault `lamp_aging` (`W-611`, lamp hours past the rated life: every result reads low, and calibration fails).
+- Routing skips an analyzer stopped on a fault. `dispatch_order` refuses an order routed to one (`analyzer_down`), and `reroute_order`, a new `lis_reroute` draft, moves it to analyzers in service when a person approves.
+- Scenarios `svc_lamp_drift` and `lab_downtime` (32 scenarios). Invariant O6 (no order sent to a stopped analyzer).
+- 111 tests. Scripted: naive 6/32, 143 blocked, 0 violations; reference 32/32; naive with guardrails off 1/32, 110 violations. Results for the earlier 30 scenarios are unchanged.
 
 Tests for physical inference rather than rule-following, after a review of where the POC stands against the MHS announcement.
 

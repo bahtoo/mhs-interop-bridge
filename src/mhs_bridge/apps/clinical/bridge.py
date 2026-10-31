@@ -5,7 +5,8 @@ discovers analyzers, reads their catalogues and results, and invokes
 ``download_order`` on them. On top of that it owns the clinical semantics that
 are not a hardware concern:
 
-* FHIR ServiceRequest intake and capability routing;
+* FHIR ServiceRequest intake and capability routing, and rerouting to a backup
+  analyzer when the one an order was routed to stops;
 * the order lifecycle, mirrored to the EHR as FHIR Task;
 * release gates: holds, patient identity against the order, order state,
   Westgard QC, critical-value notification;
@@ -47,7 +48,7 @@ class ClinicalBridgeApp:
     app_id = "clinical"
 
     # Every procedure is reviewed. The value is the draft kind.
-    REVIEWED = {"dispatch_order": "lis_order", "release_results": "ehr_release",
+    REVIEWED = {"dispatch_order": "lis_order", "reroute_order": "lis_reroute", "release_results": "ehr_release",
                 "request_recollection": "ward_task", "request_critical_callback": "critical_callback",
                 "chart_vitals": "vitals_chart", "propose_resolution": "data_resolution"}
     NEEDS_HUMAN = set(REVIEWED)
@@ -84,7 +85,14 @@ class ClinicalBridgeApp:
                       "each analyzer's protocol. Sent when a human approves; the Task then moves to accepted.",
                       [Param("order_id", "string", "ServiceRequest id")],
                       safety_checks=["order not yet dispatched", "every test routable to an online analyzer",
+                                     "no routed analyzer stopped on a fault",
                                      "no unresolved data exception (for example a missing accession)"]),
+            Procedure("reroute_order", "Draft moving an order that is not yet dispatched off a stopped analyzer, to "
+                      "analyzers in service that offer its tests. Applied when a human approves.",
+                      [Param("order_id", "string", "ServiceRequest id"),
+                       Param("reason", "string", "why, with the analyzer's state")],
+                      safety_checks=["order not yet dispatched", "an analyzer it is routed to is stopped",
+                                     "every test routable to an analyzer in service"]),
             Procedure("release_results", "Draft a specimen's results for the EHR as Observations and a "
                       "DiagnosticReport. Sent when a human approves.",
                       [Param("specimen_id", "string", "specimen barcode")],
@@ -227,11 +235,28 @@ class ClinicalBridgeApp:
             if o.unroutable:
                 return Decision.block("unroutable", f"no online analyzer offers LOINC {o.unroutable}",
                                       "Do not substitute a test. Escalate for referral or to bring an analyzer online.")
+            down = [dev for dev in o.routing if not order_intake.in_service(self.runtime, dev, self.actor)]
+            if down:
+                return Decision.block("analyzer_down", f"order {o.order_id} is routed to {down}, stopped on a fault",
+                                      "Move the order to an analyzer in service with reroute_order, and tell the "
+                                      "vendor's service desk about the stopped one.")
             if o.exceptions:
                 return Decision.block("data_exception", f"order {o.order_id} has unresolved data exceptions: "
                                       f"{[e['issue'] for e in o.exceptions]}",
                                       "A human must confirm the missing value. Read the order's exceptions and their "
                                       "suggestions, then propose_resolution with the basis, or escalate.")
+            return Decision.ok()
+        if procedure == "reroute_order":
+            o = self.orders.get(args["order_id"])
+            if o is None:
+                return Decision.block("unknown_order", f"no order {args['order_id']}")
+            if o.task_status != "requested":
+                return Decision.block("already_dispatched", f"order {o.order_id} is {o.task_status}")
+            if all(order_intake.in_service(self.runtime, dev, self.actor) for dev in o.routing):
+                return Decision.block("not_needed", f"every analyzer order {o.order_id} is routed to is in service")
+            if self._rerouted(o).unroutable:
+                return Decision.block("unroutable", f"no analyzer in service offers LOINC {self._rerouted(o).unroutable}",
+                                      "Escalate: refer the specimen to another lab, or wait for the analyzer.")
             return Decision.ok()
         if procedure == "release_results":
             rows = self.results(args["specimen_id"])
@@ -377,6 +402,8 @@ class ClinicalBridgeApp:
         safety = self.manifest().procedure(procedure).safety_checks
         if procedure == "dispatch_order":
             out = self._draft_dispatch(self.orders[args["order_id"]])
+        elif procedure == "reroute_order":
+            out = self._draft_reroute(self.orders[args["order_id"]], args["reason"])
         elif procedure == "release_results":
             meta.setdefault("report_id", f"rpt-{next(self._ids):04d}")
             out = self._draft_release(args["specimen_id"], meta["report_id"])
@@ -430,6 +457,20 @@ class ClinicalBridgeApp:
                          for i, t in enumerate(tests)]
         return {"intent": {"source": self._source(o)}, "proposed": proposed,
                 "payload": {"format": "lis_order", "text": "\n\n".join(texts), "content": {"downloads": downloads}}}
+
+    def _rerouted(self, o: Order) -> Order:
+        trial = Order(o.order_id, o.patient_id, o.specimen_id, list(o.loinc_codes), o.priority, o.task_id,
+                      source=o.source)
+        return order_intake.route(trial, self.runtime, self.actor)
+
+    def _draft_reroute(self, o: Order, reason: str) -> dict:
+        new = self._rerouted(o)
+        content = {"order_id": o.order_id, "from": o.routing, "to": new.routing}
+        proposed = [{"path": f"{o.order_id}.routing.{dev}", "value": tests,
+                     "from": f"catalogue {dev}; {dev} is in service"} for dev, tests in new.routing.items()]
+        return {"intent": {"source": {**self._source(o), "text": reason}}, "proposed": proposed,
+                "payload": {"format": "lis_reroute", "content": content,
+                            "text": f"Order {o.order_id}: {o.routing} -> {new.routing}\nReason: {reason}"}}
 
     def _draft_release(self, specimen_id: str, report_id: str) -> dict:
         rows = self.results(specimen_id)
@@ -558,6 +599,13 @@ class ClinicalBridgeApp:
                 delivered.append({"device_id": dl["device_id"], **res})
             self._task(o, "accepted", f"dispatched on approval by {approver} ({draft.request_id})")
             return {"status": "ok", "order_id": o.order_id, "delivered": delivered}
+        if procedure == "reroute_order":
+            o = self.orders[args["order_id"]]
+            moved = draft.payload["content"]["to"]                  # exactly what was approved
+            o.routing = {dev: list(tests) for dev, tests in moved.items()}
+            o.history.append({"status": o.task_status, "rerouted": moved, "by": approver,
+                              "request_id": draft.request_id, "reason": args["reason"]})
+            return {"status": "ok", "order_id": o.order_id, "routing": o.routing}
         if procedure == "release_results":
             return self._release(args["specimen_id"], draft, approver, event)
         if procedure == "request_critical_callback":
