@@ -16,7 +16,9 @@ Each idea below is implemented in this repository so it can be judged on running
 
 **Proposal.** A declared `risk_class` in the manifest. The runtime enforces `patient_connected` as read-only before procedure lookup, so a procedure added to such a driver by mistake still cannot be invoked. The class is shown in discovery and in the reference file.
 
-**Here.** `mhs_shim/runtime.py` (`read_only_device`), `profiles/vitalwave_m3.yaml`.
+A second class, `patient_exposing`, marks equipment that irradiates patients (the CT). It is not refused outright: its manifest carries service and QA procedures and no patient scan, and its driver's interlocks keep those to an empty gantry or the QA phantom.
+
+**Here.** `mhs_shim/runtime.py` (`read_only_device`), `profiles/vitalwave_m3.yaml`, `profiles/medflo_ci2.yaml` (the contrast injector), `profiles/helix_ct64.yaml`.
 
 ## 3. Error hints in the manifest
 

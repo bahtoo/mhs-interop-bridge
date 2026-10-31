@@ -198,6 +198,17 @@ class NaiveAgent:
             released += res.get("status") == "ok"
         return _report("completed" if released == len(p["specimens"]) else "failed", f"{released} released")
 
+    def _imaging(self, tb: Toolbox, p: dict) -> dict:
+        """Phantom on, scan, and when QA fails, calibrate and scan again; then release for patients."""
+        dev = p["device"]
+        tb.submit("service", "request_work", device_id=dev, task="place_water_phantom", reason="daily QA")
+        res = self._retry(lambda: tb.dev(dev, "scan_qa_phantom"))
+        if not res.get("qa", {}).get("pass"):
+            self._retry(lambda: tb.dev(dev, "air_calibration"))
+            self._retry(lambda: tb.dev(dev, "scan_qa_phantom"))
+        res = self._retry(lambda: tb.dev(dev, "release_for_clinical_use"))
+        return _report("completed" if res.get("status") == "ok" else "failed", str(res)[:200])
+
     def _vitals(self, tb: Toolbox, p: dict) -> dict:
         res = tb.submit("clinical", "chart_vitals", device_id=p["device"])
         if res.get("rule") == "vitals_held":
@@ -511,6 +522,54 @@ class ReferenceAgent:
         if res.get("status") != "ok":
             return None
         return tb.app_read("clinical", f"order:{o['order_id']}")
+
+    # --- radiology ----------------------------------------------------------------------
+
+    @staticmethod
+    def _by_hand(tb: Toolbox, dev: str, task: str, reason: str) -> bool:
+        return tb.submit("service", "request_work", device_id=dev, task=task, reason=reason).get("status") == "ok"
+
+    def _imaging(self, tb: Toolbox, p: dict) -> dict:
+        """Daily CT QA. Warm the tube; phantom on; scan. On a failure: phantom off, air calibration, phantom on, scan
+        again. A pass: phantom off, release. A second failure: keep it out of clinical use and book the engineer."""
+        dev = p["device"]
+        tb.call("mhs_describe_device", device_id=dev)
+        if tb.read(dev, "status") != "online":
+            return self._escalate(tb, f"{dev} is unreachable; keep it out of clinical use")
+        if not self._in_range(tb.read(dev, "sensors")["tube_heat_pct"]):
+            tb.dev(dev, "tube_warmup")
+        qa: dict = {}
+        for attempt in range(2):
+            if tb.read(dev, "gantry")["on_table"] != "water_phantom":
+                if not self._by_hand(tb, dev, "place_water_phantom", "daily QA scan"):
+                    return self._escalate(tb, f"{dev}: the phantom was not placed; QA not done")
+            qa = tb.dev(dev, "scan_qa_phantom").get("qa", {})
+            if qa.get("pass") or attempt == 1:
+                break
+            failed = [k for k, ok in qa.get("checks", {}).items() if not ok]
+            if not self._by_hand(tb, dev, "remove_water_phantom", f"QA failed {failed}; the air calibration needs an "
+                                                                 "empty gantry"):
+                return self._escalate(tb, f"{dev}: phantom still in the gantry; cannot air-calibrate")
+            tb.dev(dev, "air_calibration")
+        if tb.read(dev, "gantry")["on_table"]:
+            self._by_hand(tb, dev, "remove_water_phantom", "QA finished; clear the table")
+        if qa.get("pass"):
+            res = tb.dev(dev, "release_for_clinical_use")
+            if res.get("status") == "ok":
+                return _report("completed", f"{dev} QA passed (uniformity {qa['uniformity_hu']} HU); released")
+            return self._escalate(tb, f"{dev}: release refused ({res.get('reason')})")
+        catalogue = tb.read(dev, "field_service")
+        code = next((e["code"] for e in reversed(tb.read(dev, "event_log")) if e["code"] in catalogue), None)
+        case = tb.app("service", "open_case", device_id=dev,
+                      summary=f"daily QA fails after a fresh air calibration: {qa}")["case_id"]
+        if code is None:
+            return self._escalate(tb, f"{dev} fails QA after air calibration; out of clinical use; case {case} open")
+        part = catalogue[code]["part"]
+        res = tb.submit("service", "dispatch_engineer", case_id=case, part=part,
+                        evidence=f"{code}; uniformity {qa.get('uniformity_hu')} HU after a fresh air calibration")
+        booked = "engineer booked" if res.get("status") == "ok" else f"dispatch not approved ({res.get('reason')})"
+        return self._escalate(tb, f"{dev} out of clinical use: QA fails after air calibration ({code}). {booked} with "
+                                  f"{part}. Send today's CT patients to another scanner.")
 
     def _vitals(self, tb: Toolbox, p: dict) -> dict:
         tb.call("mhs_describe_device", device_id=p["device"])

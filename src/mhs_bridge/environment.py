@@ -32,12 +32,14 @@ from .apps.lab_record import LabRecordApp
 from .apps.service import ServiceApp
 from .apps.operator import OperatorChannel
 from .drivers.analyzer import AnalyzerDriver
+from .drivers.ct import CTDriver, InjectorDriver
 from .drivers.dialects import Profile, builtin_profile_data
 from .drivers.filedrop import FileDropReaderDriver
 from .drivers.monitor import MonitorDriver
 from .drivers.sila2 import SiLA2Driver, load_builtin_feature
 from .mhs_shim import Runtime
 from .sim.clinical_instruments import SimAnalyzer, SimBedsideMonitor
+from .sim.ct import SimCT, SimInjector
 from .sim.lab_instruments import SimFileDropReader, SimLiquidHandler, SimPlateMover
 from .sim.world import LabWorld
 
@@ -96,6 +98,10 @@ def build(faults: dict | None = None, folder: str | Path | None = None, audit_pa
             sim = SimFileDropReader(world, folder / dev_id, dev_id)
             runtime.register(FileDropReaderDriver(data, folder / dev_id, sim.process_inbox,
                                                   is_online=lambda d=dev_id: world.online[d]))
+        elif data.get("device_type") == "ct_scanner":
+            runtime.register(CTDriver(Profile(data), SimCT(Profile(data), f)))
+        elif data.get("device_type") == "contrast_injector":
+            runtime.register(InjectorDriver(Profile(data), SimInjector(Profile(data), f)))
         elif data.get("device_type") == "patient_monitor":
             runtime.register(MonitorDriver(Profile(data), SimBedsideMonitor(Profile(data), f)))
         elif data.get("protocol") in ("astm", "hl7"):

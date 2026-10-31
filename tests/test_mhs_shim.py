@@ -6,7 +6,7 @@ from mhs_bridge.tools import TOOL_SPECS
 
 def test_discovery_lists_every_device_with_risk_class():
     devices = {d["device_id"]: d for d in build().runtime.discover()}
-    assert set(devices) == {"lh-01", "arm-01", "reader-01", "chem-01", "chem-02", "hema-01", "mon-12"}
+    assert set(devices) == {"lh-01", "arm-01", "reader-01", "chem-01", "chem-02", "hema-01", "ct-01", "inj-01", "mon-12"}
     assert devices["mon-12"]["risk_class"] == "patient_connected"
     assert list(devices)[:3] == ["arm-01", "lh-01", "reader-01"]        # research devices first
 

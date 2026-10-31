@@ -85,7 +85,13 @@ class ServiceApp:
         d = self.runtime.drivers.get(device_id)
         return getattr(d, "ops", {}) if d is not None else {}
 
+    def _states(self, device_id: str) -> set[str]:
+        return {s.name for s in self.runtime.manifest(device_id).states}
+
     def _qc_failures(self, device_id: str) -> list[str]:
+        if "qa_status" in self._states(device_id):         # an imaging device: its daily QA
+            qa = self.runtime.read(device_id, "qa_status", actor=self.actor)
+            return [] if qa.get("passing") else ["daily_qa"]
         targets = self.runtime.read(device_id, "qc_targets", actor=self.actor)
         bad = []
         for test, levels in (targets.items() if isinstance(targets, dict) else []):
@@ -233,7 +239,8 @@ class ServiceApp:
         if procedure == "open_case":
             dev = args["device_id"]
             case_id = f"case-{next(self._ids):04d}"
-            diag = {s: self.runtime.read(dev, s, actor=self.actor) for s in ("mode", "sensors", "event_log", "reagents")}
+            diag = {s: self.runtime.read(dev, s, actor=self.actor)
+                    for s in ("mode", "sensors", "event_log", "reagents", "gantry", "qa_status") if s in self._states(dev)}
             self.cases[case_id] = {"case_id": case_id, "device_id": dev, "summary": args["summary"], "status": "open",
                                    "opened_by": actor, "diagnostics": diag, "actions": [], "resolution": ""}
             return {"status": "ok", "case_id": case_id, "diagnostics": diag}

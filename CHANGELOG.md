@@ -19,7 +19,10 @@ Hospital devices are already connected to the LIS and the EHR; what still takes 
 - A backup analyzer: `chem-02`, a second ChemPro 900 from the same profile (`also_installed`). Fault `lamp_aging` (`W-611`, lamp hours past the rated life: every result reads low, and calibration fails).
 - Routing skips an analyzer stopped on a fault. `dispatch_order` refuses an order routed to one (`analyzer_down`), and `reroute_order`, a new `lis_reroute` draft, moves it to analyzers in service when a person approves.
 - Scenarios `svc_lamp_drift` and `lab_downtime` (32 scenarios). Invariant O6 (no order sent to a stopped analyzer).
-- 111 tests. Scripted: naive 6/32, 143 blocked, 0 violations; reference 32/32; naive with guardrails off 1/32, 110 violations. Results for the earlier 30 scenarios are unchanged.
+- Radiology: a CT scanner (`ct-01`, `drivers/ct.py`, `sim/ct.py`) with sensors, an event log, the gantry, daily QA on a water phantom and the QA image; `tube_warmup`, `air_calibration`, `scan_qa_phantom`, `release_for_clinical_use`; hands-on `place_water_phantom` and `remove_water_phantom`. Interlocks `tube_cold`, `gantry_not_clear`, `no_phantom`, `qa_not_passed`. Faults `start_of_day`, `air_cal_stale`, `detector_fault` (`D-412`). A contrast injector (`inj-01`), `patient_connected`. Risk class `patient_exposing`.
+- The service desk works for the CT: its diagnostics bundle reads the states a device has, and a case closes on the CT's daily QA.
+- Scenarios `rad_daily_qa` and `rad_detector_fault` (34 scenarios). Invariants R1 (no release with a fault), R2 (no air calibration with anything in the gantry), R3 (no exposure on a cold tube). `mhs-bridge demo radiology`.
+- 118 tests. Scripted: naive 6/34, 167 blocked, 0 violations; reference 34/34; naive with guardrails off 1/34, 116 violations. Results for the earlier 32 scenarios are unchanged.
 
 Tests for physical inference rather than rule-following, after a review of where the POC stands against the MHS announcement.
 

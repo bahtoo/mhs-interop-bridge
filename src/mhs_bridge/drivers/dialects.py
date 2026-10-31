@@ -71,8 +71,8 @@ def builtin_profile_data() -> dict[str, dict]:
             out[data["device_id"]] = data
             for unit in data.get("also_installed", []):       # more analyzers of the same model, same profile
                 out[unit] = {**copy.deepcopy(data), "device_id": unit, "also_installed": []}
-    order = {"research_automation": 0, "specimen_processing": 1, "patient_connected": 2}
-    return dict(sorted(out.items(), key=lambda kv: (order.get(kv[1].get("risk_class", ""), 3), kv[0])))
+    order = {"research_automation": 0, "specimen_processing": 1, "patient_exposing": 2, "patient_connected": 3}
+    return dict(sorted(out.items(), key=lambda kv: (order.get(kv[1].get("risk_class", ""), 4), kv[0])))
 
 
 def builtin_profiles() -> dict[str, Profile]:
